@@ -1,0 +1,3011 @@
+#这是一份初始的API文档
+openapi: 3.0.0
+info:
+  title: 本末实验室 API 文档
+  description: 这是一份基于需求文档的API规范，用于指导前后端开发。
+  version: 1.0.0
+servers:
+  - url: https://api.yourwebsite.com/v1
+    description: 生产环境
+  - url: http://localhost:3000/v1
+    description: 本地开发环境
+
+paths:
+  /homepage:
+    get:
+      summary: 获取主页所有数据
+      description: 包含推荐课程、最新动态和热门社群内容，用于渲染主页。
+      responses:
+        '200':
+          description: 成功获取主页数据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  # --- 课程版块 ---
+                  mostSubscribedCourses:
+                    type: array
+                    description: 订阅量最多的课程列表
+                    items:
+                      $ref: '#/components/schemas/CourseSummary' # 建议为课程也创建一个摘要模型
+
+                  mostCollectedCourses:
+                    type: array
+                    description: 收藏数最多的课程列表
+                    items:
+                      $ref: '#/components/schemas/CourseSummary'
+
+                  # --- 社群版块 (保持不变) ---
+                  latestCommunityPosts:
+                    type: array
+                    description: 最新的社群帖子列表
+                    items:
+                      $ref: '#/components/schemas/CommunityPostSummary'
+
+                  trendingCommunityPosts:
+                    type: array
+                    description: 热门的社群帖子列表
+                    items:
+                      $ref: '#/components/schemas/CommunityPostSummary'
+
+                  # --- 作品版块 (新增) ---
+                  mostDownloadedWorks:
+                    type: array
+                    description: 下载量最多的画廊作品列表
+                    items:
+                      $ref: '#/components/schemas/GalleryItemSummary' # 建议为作品也创建一个摘要模型
+
+                  mostCollectedWorks:
+                    type: array
+                    description: 收藏数最多的画廊作品列表
+                    items:
+                      $ref: '#/components/schemas/GalleryItemSummary'
+  /search:
+    get:
+      summary: 多维度聚合搜索
+      description: |
+        根据用户输入的关键词，在**课程、社群、画廊和个人中心**四个维度进行检索，并返回聚合结果。
+
+        **检索范围说明（契约）：**
+        - **课程:** 匹配 Title, Author, Tags。
+        - **社群:** 匹配 Name, Description。
+        - **画廊:** 匹配 Title, Artist。
+        - **用户:** 匹配 Username。
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: 用户的搜索关键词（例如："你好"）
+      responses:
+        '200':
+          description: 成功返回多维度搜索结果列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  # 第一个一级内容：课程搜索结果
+                  courses:
+                    type: array
+                    description: 匹配关键词的课程列表
+                    items:
+                      $ref: '#/components/schemas/Course'
+                  # 第二个一级内容：社群搜索结果
+                  communities:
+                    type: array
+                    description: 匹配关键词的社群列表
+                    items:
+                      $ref: '#/components/schemas/CommunityPostSummary'
+                  # 第三个一级内容：画廊作品搜索结果
+                  galleryItems:
+                    type: array
+                    description: 匹配关键词的画廊作品列表
+                    items:
+                      $ref: '#/components/schemas/GalleryItem'
+                  # 第四个一级内容：个人用户搜索结果
+                  users:
+                    type: array
+                    description: 匹配关键词的用户（个人中心）列表
+                    items:
+                      $ref: '#/components/schemas/UserSearchResult'
+  /auth/login:
+    post:
+      summary: 用户登录
+      description: 用户通过邮箱和密码登录，成功后获取认证令牌。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 用户注册邮箱
+                password:
+                  type: string
+                  format: password
+                  description: 用户密码
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: 用于后续API调用的认证令牌
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: 认证失败，如密码错误或用户不存在
+  /auth/register:
+    post:
+      summary: 用户注册
+      description: 创建一个新用户账号，必填字段包括昵称、手机、邮箱和验证码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: 注册成功，新用户创建
+        '409':
+          description: 邮箱或用户名已被占用
+        '400':
+          description: 缺少必填字段或者数据格式错误
+  /auth/profile/avatar:
+    post:
+      summary: 上传用户头像图片
+      description: |
+        用户上传一个新的头像图片。
+        服务器处理成功后，会自动更新用户的 `avatarUrl` 字段。
+        - **图片格式**: 支持 JPEG, PNG, GIF。
+        - **大小限制**: 最大不超过 2MB。
+      security:
+        - bearerAuth: [] # 需要用户登录
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - avatarFile
+              properties:
+                avatarFile:
+                  type: string
+                  format: binary # 关键：表示这是一个文件
+                  description: 用户选择的头像图片文件 (Max 2MB)。
+      responses:
+        '200':
+          description: 头像上传成功，返回更新后的完整用户信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSummary' # 返回更新后的User对象，前端可直接使用新的 avatarUrl
+        '400':
+          description: 错误的请求，例如文件未上传、文件格式不支持或文件大小超出限制。
+        '413':
+          description: 请求体过大 (Payload Too Large)，特指文件大小超限。
+  /auth/forgot-password/send-code:
+    post:
+      summary: 请求发送密码重置验证码
+      description: |
+        用户提供注册邮箱。如果邮箱存在，系统将向该邮箱发送一个用于重置密码的验证码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 用户注册时使用的邮箱
+      responses:
+        '200':
+          description: 如果邮箱存在，验证码已成功发送（为防止探测用户是否存在，即使邮箱不存在也可能返回成功）
+        '404':
+          description: （可选）如果业务上允许明确告知邮箱不存在，则返回404
+  /auth/forgot-password/send-sms:
+    post:
+      summary: 请求发送密码重置短信验证码
+      description: |
+        用户提供注册手机号。如果手机号存在，系统将向该号码发送一个用于重置密码的短信验证码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  description: 用户注册时使用的手机号
+      responses:
+        '200':
+          description: 如果手机号存在，验证码已成功发送。
+  /auth/reset-password:
+    post:
+      summary: 确认验证码并重置密码
+      description: 用户提供验证码、新密码和确认密码，验证一致后更新数据库密码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - identifier
+                - verificationCode
+                - newPassword
+                - confirmPassword
+              properties:
+                identifier:
+                  type: object
+                  description: 用户的身份凭证，手机或邮箱二选一。
+                  properties:
+                    phone:
+                      type: string
+                    email:
+                      type: string
+                      format: email
+                  oneOf:
+                    - required: [phone]
+                    - required: [email]
+                verificationCode:
+                  type: string
+                  description: 接收到的验证码
+                newPassword:
+                  type: string
+                  format: password
+                  description: 新密码
+                confirmPassword:
+                  type: string
+                  format: password
+                  description: 确认新密码（前端校验应与 newPassword 一致）
+      responses:
+        '200':
+          description: 密码重置成功
+        '400':
+          description: 验证码无效或两次密码不一致
+  /auth/profile:
+    summary: 更改用户信息
+    description: |
+      登录用户更新个人资料。
+      - **修改非敏感信息** (如昵称, 兴趣爱好) 时，可直接提交。
+      - **修改敏感信息** (如真实姓名 `name`) 时, 请求体中 **必须** 包含一个有效的 `verificationCode`。
+       在修改敏感信息前，客户端应先调用 `/auth/profile/send-verification-code` 接口来获取验证码。
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              verificationCode:
+                type: string
+                description: "条件性必填。当且仅当本次请求包含 'name' 字段时，此字段为必需。" # <--- 更新描述
+              name:
+                type: string
+                description: 真实姓名（敏感信息）
+              nickname:
+                type: string
+                description: 昵称
+              ageGroup:
+                $ref: '#/components/schemas/RegisterRequest/properties/ageGroup'
+                description: 年龄组
+              gender:
+                $ref: '#/components/schemas/RegisterRequest/properties/gender'
+                description: 性别
+              interests:
+                $ref: '#/components/schemas/RegisterRequest/properties/interests'
+      responses:
+        '200':
+          description: 用户信息更新成功，返回更新后的用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: 当修改敏感信息时，验证码无效或未提供。
+  /auth/profile/send-verification-code:
+    post:
+      summary: 请求发送个人资料修改验证码
+      description: |
+        为修改敏感个人资料（如真实姓名）的操作发送验证码。
+        后端服务会根据用户的绑定情况，优先向手机发送短信，若无手机则向邮箱发送邮件。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 验证码已成功发送。
+  /auth/change-phone/initiate-verification:
+    post:
+      summary: 更改手机号 - 步骤1：发起身份验证 # <--- 摘要更新
+      description: | # <--- 描述更新
+        为更改手机号操作发起身份验证。
+        用户可以选择通过原手机号或注册邮箱接收验证码。
+      security:
+        - bearerAuth: []
+      requestBody: # <--- 新增 requestBody
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - method
+              properties:
+                method:
+                  type: string
+                  enum: [oldPhone, registeredEmail]
+                  description: "选择的验证方式：'oldPhone' - 向原手机发短信；'registeredEmail' - 向注册邮箱发邮件。"
+      responses:
+        '200':
+          description: 验证码已成功发送至指定的渠道（原手机或注册邮箱）。
+  /auth/change-phone/verify-new:
+    post:
+      summary: 更改手机号 - 步骤2：发送新手机号验证码
+      description: 向用户提供的新手机号发送验证码。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newPhone
+              properties:
+                newPhone:
+                  type: string
+                  description: 用户希望绑定的新手机号
+      responses:
+        '200':
+          description: 验证码已发送至新手机号
+  /auth/change-phone/commit:
+    post:
+      summary: 更改手机号 - 步骤3：提交并完成修改
+      description: 提交身份验证码、新手机验证码和新手机号，完成手机号更换。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newPhone
+                - identityCode
+                - newCode
+              properties:
+                newPhone:
+                  type: string
+                  description: 新手机号
+                identityCode:
+                  type: string
+                  description: 用于验证身份的验证码（原手机或注册邮箱收到）
+                newCode:
+                  type: string
+                  description: 新手机收到的验证码
+      responses:
+        '200':
+          description: 手机号更换成功
+        '400':
+          description: 验证码错误或新手机号已被占用
+  /auth/change-mail/initiate-verification:
+    post:
+      summary: 更改邮箱 - 步骤1：发起身份验证 # <--- 摘要更新
+      description: | # <--- 描述更新
+        为更改邮箱操作发起身份验证。
+        用户可以选择通过原邮箱或已绑定的手机号接收验证码。
+      security:
+        - bearerAuth: []
+      requestBody: # <--- 新增 requestBody
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - method
+              properties:
+                method:
+                  type: string
+                  enum: [oldEmail, registeredPhone]
+                  description: "选择的验证方式：'oldEmail' - 向原邮箱发邮件；'registeredPhone' - 向已绑定的手机发短信。"
+      responses:
+        '200':
+          description: 验证码已成功发送至指定的渠道（原邮箱或绑定手机）。
+  /auth/change-mail/verify-new:
+    post:
+      summary: 更改邮箱 - 步骤2：发送新邮箱验证码
+      description: 向用户提供的新邮箱发送验证码。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newMail
+              properties:
+                newMail:
+                  type: string
+                  format: email
+                  description: 用户希望绑定的新邮箱
+      responses:
+        '200':
+          description: 验证码已发送至新邮箱
+  /auth/change-mail/commit:
+    post:
+      summary: 更改邮箱 - 步骤3：提交并完成修改
+      description: 提交身份验证码、新邮箱验证码和新邮箱，完成邮箱更换。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newMail
+                - identityCode
+                - newCode
+              properties:
+                newMail:
+                  type: string
+                  format: email
+                  description: 新邮箱
+                identityCode:
+                  type: string
+                  description: 用于验证身份的验证码（原邮箱或注册手机号收到）
+                newCode:
+                  type: string
+                  description: 新邮箱收到的验证码
+      responses:
+        '200':
+          description: 邮箱更换成功
+        '400':
+          description: 验证码错误或新邮箱已被占用
+  /certification/submit:
+    post:
+      summary: 提交资质认证申请
+      description: 用户上传ZIP文件和相关附件，提交审核。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - certificationFile
+              properties:
+                certificationFile:
+                  type: string
+                  format: binary # 表示这是一个文件
+                  description: 包含认证资料的ZIP文件
+                notes:
+                  type: string
+                  description: 用户的额外说明或备注
+      responses:
+        '202':
+          description: 认证请求已接收，等待审核
+        '400':
+          description: 文件格式错误或未上传文件
+  /certification/cancel:
+    post:
+      summary: 取消认证申请
+      description: 用户取消当前正在审核中的认证申请。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 认证申请已取消
+        '404':
+          description: 没有进行中的认证申请可供取消
+  /tags:
+    get:
+      summary: 获取全站热门或已用标签列表
+      description: |
+        用于搜索页面、列表筛选器展示所有热门或已使用的标签。
+        **【前端提示】**：请根据返回的 `type` 字段（course, community, gallery）来应用不同的**颜色或样式**进行区分。
+      parameters:
+        - name: type # <--- 这个参数现在用于筛选，让后端只返回某一类的 Tag
+          in: query
+          schema:
+            type: string
+            enum: [course, community, gallery, all]
+            default: all
+          description: 限定只获取某个内容类型下的标签
+        # ... (其他参数保持不变)
+      responses:
+        '200':
+          description: 成功返回标签列表，每个标签对象中包含其所属的 `type` 字段。
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tag'
+  /courses:
+    get:
+      summary: 获取课程列表
+      description: 展示所有可订阅的已通过审核的课程，支持按标签、积分等筛选。
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+        - name: tag
+          in: query
+          schema:
+            type: string
+          description: 按课程标签筛选
+      responses:
+        '200':
+          description: 成功返回课程列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourseLearnerView'
+  /courses/{courseId}:
+    get:
+      summary: 获取课程详情信息
+      description: |
+        获取已通过审核课程的完整信息和章节列表，用于课程信息页面。
+        **本接口支持公开访问和认证访问：**
+        - **游客（未提供Token）:** 可以获取课程的基础信息。响应中的 `isSubscribed` 和 `isCollected` 字段将始终为 `false`。
+        - **登录用户（提供Token）:** 除了基础信息外，系统会根据用户身份判断并返回真实的 `isSubscribed` 和 `isCollected` 状态。
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回课程详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseLearnerView'
+    post:
+      summary: 订阅课程
+      description: 用户使用积分订阅该课程。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 订阅成功
+        '402':
+          description: 积分不足
+        '409':
+          description: 已经订阅过该课程
+
+    delete:
+      summary: 取消订阅课程
+      description: 用户取消对该课程的订阅。取消订阅通常不会退还积分。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: 取消订阅成功。
+        '401':
+          description: 未认证（未登录）。
+        '404':
+          description: 课程不存在或用户并未订阅该课程。
+  /courses/{courseId}/progress:
+    get:
+      summary: 获取用户当前课程进度
+      description: 返回用户在该课程的学习进度，例如已完成章节数、当前章节ID等。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+      responses:
+        '200':
+          description: 成功返回课程进度
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  completedChapters:
+                    type: integer
+                    description: 已完成章节数
+                  currentChapterId:
+                    type: integer
+                    description: 正在学习的章节ID
+                  isCompleted:
+                    type: boolean
+                    description: 课程是否已全部完成
+  /courses/{courseId}/chapters/{chapterId}/submit:
+    post:
+      summary: 提交章节练习答案
+      description: 用户提交章节练习的答案，服务器进行批改并更新课程进度。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+        - name: chapterId
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: 提交的练习答案列表
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      exerciseId:
+                        type: integer
+                      userAnswer:
+                        type: string
+      responses:
+        '200':
+          description: 答案提交成功，返回批改结果和最新的课程进度
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score:
+                    type: integer
+                    description: 本次练习得分
+                  isPassed:
+                    type: boolean
+                    description: 练习是否通过
+                  newProgress:
+                    $ref: '#/paths/~1courses~1{courseId}~1progress/get/responses/200/content/application~1json/schema' # 引用进度模型
+  /courses/{courseId}/collect:
+    post:
+      summary: 收藏指定课程
+      description: 将指定的课程添加到当前用户的收藏列表。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 课程不存在
+        '409':
+          description: 已经收藏过该课程
+    delete:
+      summary: 取消收藏指定课程
+      description: 将指定的课程从当前用户的收藏列表中移除。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 取消收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 课程不存在或未被收藏
+  /creator/courses:
+    get:
+      summary: 获取作者自己创建的课程列表
+      description: 用于建设者在课程管理页面查看和修改自己的课程。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回作者创建的课程列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourseBase'
+  /creator/courses/{courseId}:
+    put:
+      summary: 编辑或重新提交课程以供审核
+      description: |
+        建设者更新自己课程的元数据。
+        提交后，课程状态将自动变为“待审核(pending_review)”。
+        **重要限制**: 此操作仅在课程当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseBase' # 假设编辑时提交的数据结构与创建时一致
+      responses:
+        '200':
+          description: 课程更新成功，已进入审核流程
+        '403':
+          description: 禁止访问，只有课程作者才能编辑
+        '404':
+          description: 课程不存在
+    delete:
+      summary: 下架（归档）一个课程 (作者)
+      description: |
+        课程的作者将自己的课程状态设置为“已归档(archived)”。
+        **重要限制**: 此操作仅在课程当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        description: '提供是否归档关联社群的选项。如果前端不提供此body，后端可以默认为true以兼容旧逻辑。'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                archiveCommunity:
+                  type: boolean
+                  description: '是否同时归档与该课程关联的社群。true - 归档, false - 不归档。'
+                  default: true
+      responses:
+        '204':
+          description: 课程下架成功。
+        '403':
+          description: 禁止访问，当前用户既不是课程作者，也不是管理员。
+        '404':
+          description: 课程不存在。
+  /creator/courses/{courseId}/badge:
+    post:
+      summary: 上传课程的成就徽章
+      description: |
+        为指定的课程上传或更新成就徽章。
+        上传成功后，服务器会自动更新该课程的 `achievementBadgeUrl` 字段。
+        - **图片格式**: 支持 JPEG, PNG。
+        - **大小限制**: 最大不超过 500KB。
+      security:
+        - bearerAuth: [] # 需要作者或管理员权限
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 要上传徽章的课程ID。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - badgeFile
+              properties:
+                badgeFile:
+                  type: string
+                  format: binary # 表示这是一个文件
+                  description: 徽章图片文件 (Max 500KB)。
+      responses:
+        '200':
+          description: 徽章上传成功，返回更新后的课程信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseBase' # 返回更新后的课程对象
+        '400':
+          description: 错误的请求，如文件格式不支持或大小超限。
+        '403':
+          description: 禁止访问，当前用户不是该课程的作者或管理员。
+  /creator/courses/{courseId}/chapters:
+    post:
+      summary: 为课程新增一个章节
+      description: 在指定课程的末尾添加一个新的章节。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              # 假设有一个不包含ID的Chapter模型用于创建
+              $ref: '#/components/schemas/ChapterCreationRequest'
+      responses:
+        '201':
+          description: 章节创建成功
+  /creator/courses/{courseId}/chapters/order:
+    put:
+      summary: (Creator) 批量更新课程的章节顺序
+      description: |
+        为指定课程的所有章节设置新的顺序。
+        请求体中需要提供一个包含所有章节ID的数组，数组的顺序即为新的顺序。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - chapterIds
+              properties:
+                chapterIds:
+                  type: array
+                  items:
+                    type: integer
+                  description: '按新的期望顺序排列的章节ID数组。'
+                  example: [3, 1, 4, 2] # 表示 chapterId=3排第一, id=1排第二, 以此类推
+      responses:
+        '204':
+          description: 章节顺序更新成功。
+        '400':
+          description: '请求无效，例如提供的章节ID列表不完整或包含无效ID。'
+        '403':
+          description: '禁止访问，您不是该课程的作者。'
+  /creator/courses/{courseId}/chapters/{chapterId}:
+    put:
+      summary: 更新指定章节的内容
+      description: 更新章节的标题、视频链接或练习题等。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+        - name: chapterId
+          in: path
+          required: true
+      requestBody:
+        # ...
+      responses:
+        '200':
+          description: 章节更新成功
+
+    delete:
+      summary: 删除指定章节
+      description: 从课程中移除一个章节。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+        - name: chapterId
+          in: path
+          required: true
+      responses:
+        '204':
+          description: 章节删除成功
+  /creator/courses/{courseId}/dashboard:
+    get:
+      summary: (Creator) 获取指定课程的数据看板
+      description: |
+        获取单个课程的详细经营数据，用于向该课程的作者展示。
+        **权限**: 只有该课程的作者或管理员可以访问。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回课程的看板数据。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentDashboard'
+        '403':
+          description: 禁止访问，当前用户不是该课程的作者或管理员。
+        '404':
+          description: 未找到指定的课程。
+  /communities:
+    get:
+      summary: 获取社群帖子列表
+      description: 展示所有社群帖子，支持按标签、悬赏状态等筛选。
+      parameters:
+        - name: page
+          in: query
+        - name: pageSize
+          in: query
+        - name: tag
+          in: query
+        - name: sortBy
+          in: query
+          enum: [latest, mostReplied, highReward]
+          description: 排序方式
+      responses:
+        '200':
+          description: 成功返回帖子列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunityPost'
+  /communities/{postId}:
+    get:
+      summary: 获取社群帖子详情和回复
+      description: |
+        获取主贴内容和该帖子下的所有回复。
+        **本接口支持公开访问和认证访问：**
+        - **游客（未提供Token）:** 可以获取公开的帖子和回复内容。帖子响应中的 `isCollected` 字段将为 `false`。
+        - **登录用户（提供Token）:** 系统会根据用户身份判断并返回真实的 `isCollected` 状态。
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回社群详情
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  post:
+                    $ref: '#/components/schemas/CommunityPost'
+                  replies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityReply'
+  /communities/{postId}/replies:
+    post:
+      summary: 回复社群帖子
+      description: 用户提交对该社群主贴的回复。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  description: 回复内容
+      responses:
+        '201':
+          description: 回复成功
+  /communities/{postId}/replies/{replyId}:
+    delete:
+      summary: 删除帖子的指定回复 (作者或管理员权限)
+      description: |
+        删除指定的回复。此操作有以下两种权限模式：
+        - **作者管理**: 社群帖子的作者可以删除自己帖子下的任意回复。
+        - **全局管理**: 管理员(Admin)可以删除全站任何帖子下的任意回复。
+        - **权限管理**：后端在处理此请求时，需要进行权限校验：检查发起请求的用户**要么是 `postId` 对应帖子的作者，要么拥有管理员（Admin）角色**。
+      security:
+        - bearerAuth: [] # 需要用户登录
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 该回复所属的社群帖子的ID。
+        - name: replyId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 需要被删除的回复的ID。
+      responses:
+        '204':
+          description: 回复删除成功。
+        '403':
+          description: 禁止访问。当前登录用户不是该帖子的作者。
+        '404':
+          description: 未找到指定的帖子或回复。
+  /communities/{postId}/collect:
+    post:
+      summary: 收藏指定社群帖子
+      description: 将指定的社群帖子添加到当前用户的收藏列表。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 社群帖子不存在
+        '409':
+          description: 已经收藏过该社群帖子
+    delete:
+      summary: 取消收藏指定社群帖子
+      description: 将指定的社群帖子从当前用户的收藏列表中移除。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 取消收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 社群帖子不存在或未被收藏
+  /creator/community-post:
+    post:
+      summary: 创建新社群帖子（含悬赏）
+      description: 用户创建新社群，可以同时设定悬赏积分。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, description]
+              properties:
+                title:
+                  type: string
+                  description: 社群帖子的标题
+                content:
+                  type: string
+                  description: 社群帖子的详细内容
+                tags:
+                  type: array
+                  items:
+                    type: string
+                rewardPoints:
+                  type: integer
+                  description: 悬赏积分数 (可选)
+      responses:
+        '201':
+          description: 社群帖子创建成功
+        '400':
+          description: 请求数据格式错误。
+  /creator/community-posts/{postId}:
+    put:
+      summary: (Creator) 编辑自己的社群帖子
+      description: |
+        帖子的作者更新帖子的内容。
+        **重要限制**: 此操作仅在帖子当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+      responses:
+        '200':
+          description: 帖子更新成功。
+        '403':
+          description: '禁止访问。原因可能为：1. 您不是帖子作者。2. 该帖子已被管理员暂停。'
+        '404':
+          description: 未找到指定的帖子。
+
+    delete:
+      summary: (Creator) 删除自己的社群帖子
+      description: |
+        帖子的作者删除（或归档）自己创建的社群帖子。
+        **重要限制**: 此操作仅在帖子当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: 帖子删除成功。
+        '403':
+          description: '禁止访问。原因可能为：1. 您不是帖子作者。2. 该帖子已被管理员暂停。'
+        '404':
+          description: 未找到指定的帖子。
+  /communities/{postId}/accept-answer:
+    post:
+      summary: 采纳最佳答案
+      description: 帖子作者采纳某个回复为最佳答案，触发积分转移。如果超过48小时无人采纳，**后端将自动执行采纳第一个回答的逻辑**。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [replyId]
+              properties:
+                replyId:
+                  type: integer
+                  description: 待采纳为最佳答案的回复ID
+      responses:
+        '200':
+          description: 最佳答案采纳成功，积分已发放
+        '403':
+          description: 只有发帖人才能采纳答案
+  /gallery/works:
+    get:
+      summary: 获取已发布的画廊作品列表
+      description: 展示所有通过审核的画廊作品，可用于阅读者浏览。
+      parameters:
+        - name: page
+          in: query
+        - name: pageSize
+          in: query
+        - name: tag
+          in: query
+        - name: sortBy
+          in: query
+          enum: [latest, highestRating, requiredPoints]
+      responses:
+        '200':
+          description: 成功返回作品列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GalleryItem'
+  /gallery/works/{workId}:
+    get:
+      summary: 获取作品详细信息
+      description: |
+        获取单个作品的完整详情。
+        **本接口支持公开访问和认证访问：**
+        - **游客（未提供Token）:** 可以获取公开的作品信息。响应中的 `isCollected` 字段将为 `false`。
+        - **登录用户（提供Token）:** 系统会根据用户身份判断并返回真实的 `isCollected` 状态。
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回作品详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GalleryItem'
+        '404':
+          description: 未找到指定ID的作品。
+    post:
+      summary: 下载作品 (支持二次确认)
+      description: |
+        用户请求下载作品。这是一个多阶段、多逻辑的接口：
+        1. **前置条件校验**: 如果作品有前置要求，会先检查用户是否已购买前置作品。如果未满足，返回 `409 Conflict`。
+        2. **重新下载校验**: 检查用户的购买记录，判断是否在免费重新下载期内。
+        3. **二次确认**: 如果是首次购买或免费期已过，需要扣除积分。此时会返回 `409 Conflict`，要求客户端弹窗并由用户确认。
+        4. **确认扣费**: 当客户端再次调用此接口并附带 `confirmDeduction: true` 时，后端执行扣分。
+        5. **最终下载**: 在所有条件满足后，返回 `200 OK` 和下载链接。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 要下载的作品ID。
+      requestBody:
+        description: |
+          第一次请求时可不带body，或带`confirmDeduction: false`。在收到409确认请求后，第二次请求时必须携带`confirmDeduction: true`。
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirmDeduction:
+                  type: boolean
+                  description: '用户确认扣除积分。用于两阶段下载的第二阶段。'
+                  default: false
+      responses:
+        '200':
+          description: 下载成功，积分已扣除（如需），返回下载链接。
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - downloadUrl
+                properties:
+                  downloadUrl:
+                    type: string
+                    format: uri
+                    description: 作品的临时安全下载链接。
+        '401':
+          description: 未认证（未登录）。
+        '402':
+          description: 积分不足。
+        '404':
+          description: 未找到指定ID的作品。
+        '409':
+          description: 请求冲突。因不满足业务条件而无法立即完成，需要客户端进行下一步处理（如用户确认或提示）。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: 向用户或前端开发者展示的、可读的提示信息。
+                  # --- 二次确认相关字段 ---
+                  confirmationRequired:
+                    type: boolean
+                    description: '是否需要用户二次确认扣费。如果为true，客户端应弹窗。'
+                  pointsToDeduct:
+                    type: integer
+                    description: '如果需要确认，本次下载将要扣除的积分数。'
+                  # --- 前置条件相关字段 ---
+                  prerequisiteNotMet:
+                    type: boolean
+                    description: '是否因未满足前置条件而失败。如果为true，客户端应提示用户先购买前置作品。'
+                  requiredWorkId:
+                    type: integer
+                    description: '需要先购买的前置作品的ID。'
+  /gallery/works/{workId}/rate:
+    post:
+      summary: 为已下载的作品评分
+      description: |
+        用户为已下载的作品提交评分。后端会立即记录本次评分。
+
+        **重要**: 
+        - 只有 **下载过** 此作品的用户才有资格评分。
+        - 作品的平均分 **每周刷新一次**，因此本次提交不会立即影响作品的公开评分。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 被评分的作品ID。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: '用户给出的评分，最低1分，最高5分。'
+      responses:
+        '200':
+          description: 评分已成功提交。作品的平均分将在下一次周度刷新时更新。
+        '400':
+          description: 请求格式错误，例如评分不是1-5之间的整数。
+        '401':
+          description: 未认证（未登录）。
+        '403':
+          description: 禁止访问。用户未下载该作品，因此无权评分。
+        '404':
+          description: 未找到指定的作品。
+  /gallery/works/{workId}/collect:
+    post:
+      summary: 收藏指定作品
+      description: 将指定的作品添加到当前用户的收藏列表。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 作品不存在
+        '409':
+          description: 已经收藏过该作品
+    delete:
+      summary: 取消收藏指定作品
+      description: 将指定的作品从当前用户的收藏列表中移除。
+      security:
+        - bearerAuth: [] # <--- 需要登录
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 取消收藏成功
+        '401':
+          description: 未认证（未登录）
+        '404':
+          description: 作品不存在或未被收藏
+  /creator/gallery:
+    post:
+      summary: (Creator) 提交新作品进行审核
+      description: 建设者上传作品文件和元数据信息，提交后进入管理员审核流程。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                workData:
+                  $ref: '#/components/schemas/GalleryItemRequest' # 作品的 JSON 元数据
+                workFile:
+                  type: string
+                  format: binary # 作品的实际文件 (如压缩包)
+      responses:
+        '202':
+          description: 作品已接收，等待审核。
+  /creator/gallery/{workId}:
+    put:
+      summary: (Creator) 编辑自己的作品信息
+      description: |
+        建设者修改自己作品的元数据。如果是已发布作品，修改后可能需要重新审核。
+        **重要限制**: 此操作仅在作品当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GalleryItemRequest'
+      responses:
+        '200':
+          description: 作品信息更新成功，如需审核则状态变更为待审核。
+        '403':
+          description: '禁止访问。原因可能为：1. 您不是作品作者。2. 该作品已被管理员暂停。'
+        '404':
+          description: 未找到指定的作品。
+
+    delete:
+      summary: (Creator) 下架自己的作品
+      description: |
+        作品的作者将自己的作品状态设置为“已归档(archived)”。
+        此接口支持让用户选择是否同时归档关联的社群。
+        **重要限制**: 此操作仅在作品当前状态不为“`suspended`”(被管理员暂停)时才被允许。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        description: '提供是否归档关联社群的选项。'
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                archiveCommunity:
+                  type: boolean
+                  description: '是否同时归档与该作品关联的社群。true - 归档, false - 不归档。'
+                  default: true
+      responses:
+        '204':
+          description: 作品下架成功。
+        '403':
+          description: '禁止访问。原因可能为：1. 您不是作品作者。2. 该作品已被管理员暂停。'
+        '404':
+          description: 未找到指定的作品。
+  /creator/gallery/{workId}/dashboard:
+    get:
+      summary: (Creator) 获取指定作品的数据看板
+      description: |
+        获取单个作品的详细经营数据，用于向该作品的作者展示。
+        **权限**: 只有该作品的作者或管理员可以访问。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: 成功返回作品的看板数据。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentDashboard'
+        '403':
+          description: 禁止访问，当前用户不是该作品的作者或管理员。
+        '404':
+          description: 未找到指定的作品。
+  /my/profile:
+    get:
+      summary: 获取个人身份详情和成就
+      description: 聚合用户的所有注册信息、当前身份（Role）、积分余额和已获得的成就徽章。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回用户详情
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userInfo:
+                    $ref: '#/components/schemas/User'
+                  badges:
+                    type: array
+                    items:
+                      type: string
+                    description: 用户获得的成就徽章列表
+                  # 补充：可展示的个人信息（如年龄、兴趣）已经包含在 User 模型中
+  /my/collections:
+    get:
+      summary: 获取我的收藏列表
+      description: 返回用户收藏的所有课程和画廊作品列表。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回收藏聚合列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  courses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CourseLearnerView'
+                    description: 用户收藏的课程列表
+                  galleryWorks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GalleryItem'
+                    description: 用户收藏的画廊作品列表
+  /my/supported:
+    get:
+      summary: 获取我支持的项目（已购买/订阅）
+      description: 返回用户已用积分购买或订阅的所有课程和画廊作品。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回已购买的项目列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  courses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CourseLearnerView'
+                    description: 用户已订阅的课程列表
+                  galleryWorks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SupportedWorkRecord'
+                    description: 用户已下载的支持作品列表
+  /my/creations:
+    get:
+      summary: 获取我的建设内容（仅限 Student-Artist）
+      description: 返回用户创建的所有课程、社群和画廊作品。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回用户创建的内容列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  courses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CourseBase' # 用 CourseBase 方便管理
+                    description: 用户创建的课程列表
+                  communities:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityPost'
+                    description: 用户发起的社群帖子列表
+                  galleryWorks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GalleryItem'
+                    description: 用户创建的画廊作品列表
+  /my/participations:
+    get:
+      summary: 获取我的参与（我回复过的社群）
+      description: 返回用户参与回复过的社群帖子列表。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回用户参与的社群列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunityPost'
+  /my/replies/{replyId}:
+    put:
+      summary: (User) 编辑自己的回复
+      description: |
+        用户修改自己发布的某条回复。
+        后端需要校验操作者是否为该条回复的作者。
+        可以设置一个时间限制（例如发布后15分钟内可编辑）。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: replyId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 需要编辑的回复ID。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  description: 新的回复内容。
+      responses:
+        '200':
+          description: 回复修改成功。
+        '403':
+          description: 禁止访问，您不是该回复的作者或已超出可编辑时限。
+        '404':
+          description: 未找到指定的回复。
+
+    delete:
+      summary: (User) 删除自己的回复
+      description: |
+        用户删除自己发布的某条回复。
+        后端需要校验操作者是否为该条回复的作者。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: replyId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: 需要删除的回复ID。
+      responses:
+        '204':
+          description: 回复删除成功。
+        '403':
+          description: 禁止访问，您不是该回复的作者。
+        '404':
+          description: 未找到指定的回复。
+  /my/messages:
+    get:
+      summary: 获取我的站内信/通知
+      description: 获取管理员发送给个人的站内信，如审核通知、异议处理结果等。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回站内信列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    subject:
+                      type: string
+                      description: 信件主题（如：[审核通过]）
+                    content:
+                      type: string
+                    sentDate:
+                      type: string
+                      format: date-time
+                    isRead:
+                      type: boolean
+    post:
+      summary: 发送站内信给管理员
+      description: 用户向管理员发送一条新的站内信，可用于问题反馈、功能建议或事务申诉。
+      security:
+        - bearerAuth: [] # 需要用户登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - subject
+                - content
+              properties:
+                subject:
+                  type: string
+                  description: 信件的主题
+                  example: '关于课程章节视频无法播放的反馈'
+                content:
+                  type: string
+                  description: 信件的具体内容
+      responses:
+        '202':
+          description: 消息已成功发送，等待管理员处理。
+        '400':
+          description: 请求格式错误，例如缺少主题或内容。
+    delete:
+      summary: 批量删除站内信
+      description: 根据提供的消息ID列表，一次性删除多封站内信。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - messageIds
+              properties:
+                messageIds:
+                  type: array
+                  items:
+                    type: integer
+                  description: 需要被删除的站内信ID数组。
+                  example: [101, 105, 112]
+      responses:
+        '204':
+          description: 所有指定的消息均已成功删除。
+        '400':
+          description: 请求格式错误，例如未提供ID列表。
+  /my/points/orders:
+    post:
+      summary: 创建微信支付积分购买订单
+      description: |
+        用户请求用人民币购买积分，为微信支付流程创建一个新的订单。
+        汇率固定为 1元人民币 = 10积分。
+
+        后端会根据调用环境（由前端通过请求头等方式告知）向微信支付服务器请求对应的支付凭证。
+        - **PC网站支付 (Native Pay)**: 后端会返回 `codeUrl`，前端需使用此URL生成支付二维码。
+        - **手机浏览器支付 (H5 Pay)**: 后端会返回 `h5Url`，前端需重定向到此URL拉起微信支付。
+        - **公众号/小程序支付 (JSAPI/App Pay)**: 后端会返回调用SDK所需的 `jsapiParams` 或 `appParams` 对象。
+
+        **重要提示**: 积分的最终发放，以后端接收到微信支付的异步回调通知（Webhook）为准。
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pointsToPurchase
+              properties:
+                pointsToPurchase:
+                  type: integer
+                  description: '希望购买的积分数量，必须是10的倍数。'
+                  example: 100
+      responses:
+        '201':
+          description: 订单创建成功，返回调用微信支付所需的参数。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId:
+                    type: string
+                    description: 本次购买订单的唯一ID。
+                  amountRMB:
+                    type: number
+                    format: float
+                    description: '需要支付的人民币金额。'
+                  wechatPayParams: # <--- 优化后的结构
+                    type: object
+                    description: '调用微信支付所需的参数，具体内容依支付场景而定。'
+                    properties:
+                      codeUrl:
+                        type: string
+                        description: 'Native支付的二维码链接。前端用此链接生成二维码。'
+                        example: 'weixin://wxpay/bizpayurl?pr=...'
+                      h5Url:
+                        type: string
+                        format: uri
+                        description: 'H5支付的跳转链接。'
+                      jsapiParams:
+                        type: object
+                        description: '公众号/JSAPI支付所需的参数对象 (prepay_id, nonceStr, timeStamp, signType, paySign等)。'
+                      appParams:
+                        type: object
+                        description: 'APP支付所需的参数对象 (appid, partnerid, prepayid, noncestr, timestamp, package, sign等)。'
+        '400':
+          description: 请求无效，例如购买的积分数量不是10的倍数。
+  /admin/users/{userId}/points-status:
+    put:
+      summary: (Admin) 冻结或解冻用户积分
+      description: |
+        管理员修改指定用户的积分状态（冻结或激活）。
+        **操作时必须提供理由。**
+        系统在执行成功后，会自动向被操作的用户发送一封包含操作理由的站内信。
+      security:
+        - bearerAuth: [] # 后端需校验操作者是否为Admin角色
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: '目标用户的ID。'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+                - reason
+              properties:
+                status:
+                  type: string
+                  enum: [active, frozen]
+                  description: '要设置的新状态。'
+                reason:
+                  type: string
+                  description: '管理员执行此操作的理由，将用于通知用户。'
+                  example: '系统检测到您的积分存在异常刷取行为，暂时冻结以待核查。'
+      responses:
+        '200':
+          description: 用户积分状态修改成功，返回更新后的用户信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的用户。
+  /admin/users/{userId}/points-adjustment:
+    post:
+      summary: (Admin) 手动调整用户积分
+      description: |
+        管理员为指定用户增加或扣除积分。
+        **操作时必须提供理由。**
+        系统在执行成功后，会自动向被操作的用户发送一封包含操作详情和理由的站内信。
+      security:
+        - bearerAuth: [] # 后端需校验操作者是否为Admin角色
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: '目标用户的ID。'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - adjustmentAmount
+                - reason
+              properties:
+                adjustmentAmount:
+                  type: integer
+                  description: '积分调整值。正数为增加，负数为扣除。'
+                  example: -5000
+                reason:
+                  type: string
+                  description: '管理员执行此操作的理由，将用于通知用户。'
+                  example: '经核查，系统已扣除您通过违规行为获取的5000积分。'
+      responses:
+        '200':
+          description: 用户积分调整成功，返回更新后的用户信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的用户。
+  /admin/courses/pending-review:
+    get:
+      summary: (Admin) 获取所有待审核的课程列表
+      description: '拉取所有状态为 `pending_review` 的课程，供管理员审核。'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回待审核课程列表。
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourseBase'
+  /admin/courses/{courseId}/status:
+    put:
+      summary: (Admin) 审核一个课程（通过或驳回）
+      description: |
+        更新指定课程的状态。
+        **必须提供操作理由**，特别是在驳回时。
+        系统将根据操作结果自动向课程作者发送站内信通知。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [published, rejected]
+                  description: "审核结果：'published' - 通过, 'rejected' - 驳回。"
+                reason:
+                  type: string
+                  description: '审核意见或理由，将展示给课程作者。'
+      responses:
+        '200':
+          description: 课程状态更新成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+  /admin/gallery/works/pending-review:
+    get:
+      summary: (Admin) 获取所有待审核的作品列表
+      description: '拉取所有状态为 `pending_review` 的作品，供管理员审核。'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回待审核课程列表。
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GalleryItem'
+  /admin/gallery/works/{workId}/status:
+    put:
+      summary: (Admin) 审核一个作品（通过或驳回）
+      description: |
+        更新指定作品的状态。
+        **必须提供操作理由**，特别是在驳回时。
+        系统将根据操作结果自动向作品作者发送站内信通知。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [published, rejected]
+                  description: "审核结果：'published' - 通过, 'rejected' - 驳回。"
+                reason:
+                  type: string
+                  description: '审核意见或理由，将展示给作品作者。'
+      responses:
+        '200':
+          description: 作品状态更新成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+  /admin/communities/{postId}/pending-review:
+    get:
+      summary: (Admin) 获取所有待审核的社群列表
+      description: '拉取所有状态为 `pending_review` 的社群，供管理员审核。'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回待审核社群列表。
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunityPost'
+  /admin/communities/{postId}/status:
+    put:
+      summary: (Admin) 审核一个社群（通过或驳回）
+      description: |
+        更新指定社群的状态。
+        **必须提供操作理由**，特别是在驳回时。
+        系统将根据操作结果自动向社群作者发送站内信通知。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [published, rejected]
+                  description: "审核结果：'published' - 通过, 'rejected' - 驳回。"
+                reason:
+                  type: string
+                  description: '审核意见或理由，将展示给社群作者。'
+      responses:
+        '200':
+          description: 社群状态更新成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+  /admin/certifications/pending:
+    get:
+      summary: (Admin) 获取所有待处理的资质认证申请
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回待处理认证申请列表。
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CertificationRequest'
+  /admin/certifications/{certificationId}/status:
+    put:
+      summary: (Admin) 处理一个资质认证申请（批准或拒绝）
+      description: |
+        更新指定认证申请的状态。
+        **必须提供操作理由。**
+        系统将自动向申请人发送站内信通知结果。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: certificationId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [approved, rejected]
+                reason:
+                  type: string
+                  description: '处理意见或理由。'
+      responses:
+        '200':
+          description: 认证申请处理成功。
+  /admin/users/{userId}/account-status:
+    put:
+      summary: (Admin) 暂停或恢复用户账户
+      description: |
+        管理员修改指定用户的账户状态（暂停或激活）。
+        当账户被暂停(`suspended`)时，该用户将无法登录系统。
+        **操作时必须提供理由。**
+        系统在执行成功后，会自动向被操作的用户发送一封包含操作理由的站内信（如果业务上可行，也可以发送邮件/短信）。
+      security:
+        - bearerAuth: [] # 后端需校验操作者是否为Admin角色
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: '目标用户的ID。'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+                - reason
+              properties:
+                status:
+                  type: string
+                  enum: [active, suspended]
+                  description: '要设置的新账户状态。'
+                reason:
+                  type: string
+                  description: '管理员执行此操作的理由，将用于通知用户。'
+                  example: '因您多次发表不当言论，您的账户已被暂时暂停。'
+      responses:
+        '200':
+          description: 用户账户状态修改成功，返回更新后的用户信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的用户。
+  /admin/dashboard:
+    get:
+      summary: (Admin) 获取平台运营数据看板
+      description: |
+        获取聚合了全平台核心指标的宏观数据，用于管理员的数据看板展示。
+        **权限**: 只有管理员可以访问。
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功返回平台看板数据。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboard'
+        '403':
+          description: 禁止访问，操作者不是管理员。
+  /admin/users/{userId}/profile:
+    patch:
+      summary: (Admin) 修改指定用户的个人信息
+      description: |
+        管理员更新指定用户的非核心个人资料，例如修正不当昵称、更新兴趣等。
+        **此操作应谨慎使用，并建议在管理后台记录操作日志。**
+      security:
+        - bearerAuth: [] # 后端需校验操作者是否为Admin角色
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: '目标用户的ID。'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: '包含一个或多个待修改字段的对象。'
+              properties:
+                # 管理员可以修改的字段列表
+                name:
+                  type: string
+                nickname:
+                  type: string
+                ageGroup:
+                  $ref: '#/components/schemas/RegisterRequest/properties/ageGroup'
+                gender:
+                  $ref: '#/components/schemas/RegisterRequest/properties/gender'
+                interests:
+                  $ref: '#/components/schemas/RegisterRequest/properties/interests'
+      responses:
+        '200':
+          description: 用户信息更新成功，返回更新后的完整用户信息。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: 请求体格式错误或包含无效数据。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的用户。
+  /admin/courses/{courseId}:
+    delete:
+      summary: (Admin) 强制下架或暂停一个课程
+      description: |
+        管理员因内容违规等原因，强制下架或暂停一个课程。
+        **操作时必须提供理由**，系统会自动向课程作者发送站内信通知。
+      security:
+        - bearerAuth: [] # 后端需校验操作者是否为Admin角色
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: '管理员下架课程的理由。'
+      responses:
+        '204':
+          description: 操作成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 课程不存在。
+  /admin/community-posts/{postId}:
+    delete:
+      summary: (Admin) 强制删除或暂停一个社群帖子
+      description: |
+        管理员因内容违规等原因，强制删除或暂停一个社群帖子。
+        **操作时必须提供理由**，系统会自动向帖子作者发送站内信通知。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: '管理员下架帖子的理由。'
+      responses:
+        '204':
+          description: 操作成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的帖子。
+  /admin/gallery/works/{workId}:
+    delete:
+      summary: (Admin) 强制下架或暂停一个作品
+      description: |
+        管理员因内容违规等原因，强制下架或暂停一个作品。
+        **操作时必须提供理由**，系统会自动向作品作者发送站内信通知。
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: '管理员下架作品的理由。'
+      responses:
+        '204':
+          description: 操作成功。
+        '403':
+          description: 禁止访问，操作者不是管理员。
+        '404':
+          description: 未找到指定的作品。
+
+components:
+  schemas:
+    User:
+      type: object
+      description: 用户的核心信息模型，用于 API 响应。
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: 用户唯一ID
+        username:
+          type: string
+          description: 用户名（登录凭证之一）
+        email:
+          type: string
+          format: email
+          description: 用户邮箱（登录凭证之一）
+        phone:
+          type: string
+          description: 用户手机号（登录凭证之一）
+        nickname: # <--- 补充：来自 RegisterRequest 的昵称
+          type: string
+          description: 用户昵称
+        avatarUrl:
+          type: string
+          format: uri
+          description: 用户头像URL
+        # 身份与状态
+        role:
+          type: string
+          enum: [Guest, Student, Student-Artist, Admin]
+          description: 用户核心能力标识，确定其基础权利。
+        isSupporter:
+          type: boolean
+          default: false
+          description: 是否为支持者，标识其是否为付费用户
+        currentPoints:
+          type: integer
+          description: 用户当前持有的积分
+        # 注册信息中的分类属性
+        ageGroup:
+          type: string
+          enum: [小学, 初中, 高中, 成人]
+          description: 年龄段
+        gender:
+          type: string
+          enum: [男, 女, 不想告知]
+          description: 性别
+        interests:
+          type: array
+          items:
+            type: string
+            enum: [代码学习, 思维训练, 游戏开发, 网页爬虫, 智能体调用]
+          description: 兴趣选项列表
+        accountStatus:
+          type: string
+          enum: [active, suspended]
+          default: active
+          readOnly: true
+          description: "用户的账户状态。'active' - 正常, 'suspended' - 已被暂停（无法登录或进行操作）。"
+        #支付字段
+        pointsStatus:
+          type: string
+          enum: [active, frozen]
+          default: active
+          readOnly: true
+          description: "用户积分的状态。'active' - 正常, 'frozen' - 已被冻结。"
+    UserSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        nickname:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        role:
+          type: string
+          enum: [Guest, Student, Student-Artist, Admin]
+          description: 用户核心能力标识，确定其基础权利。
+    CourseBase:
+      type: object
+      description: 课程的基础信息，用于创建和更新请求。
+      properties:
+        title:
+          type: string
+          description: 课程标题
+        description:
+          type: string
+          description: 课程描述
+        coverImage:
+          type: string
+          format: uri
+          description: 课程封面图片URL
+        tags:
+          type: array
+          items:
+            type: string
+          description: 课程标签列表
+        pricePoints:
+          type: integer
+          description: 订阅课程所需的积分（网站货币）
+        achievementBadge:
+          type: string
+          format: uri
+          description: 完成课程后解锁的成就徽章
+          readOnly: true
+        status:
+          type: string
+          enum: [published, draft, pending_review, rejected]
+          readOnly: true
+          description: |
+            课程的当前状态:
+            - `draft`: 草稿
+            - `pending_review`: 待审核
+            - `published`: 已发布 (只有此状态的课程对普通用户可见)
+            - `rejected`: 审核被拒
+    CourseSummary:
+      type: object
+      description: 用于列表展示的课程摘要信息。
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        coverImage:
+          type: string
+          format: uri
+        author: # 作者信息摘要
+          # ...
+        pricePoints:
+          type: integer
+        subscriptionCount:
+          type: integer
+          description: 该课程的总订阅数量
+        collectionCount:
+          type: integer
+          description: 该课程的总收藏数量
+    CourseLearnerView:
+      allOf: # 继承 CourseBase 的所有字段
+        - $ref: '#/components/schemas/CourseBase'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: 课程ID
+        author:
+          $ref: '#/components/schemas/UserSummary'
+        isSubscribed:
+          type: boolean
+          readOnly: true
+          description: 当前用户是否已订阅该课程
+        isCollected:
+          type: boolean
+          readOnly: true
+          description: 当前用户是否已收藏该课程
+        chapterCount:
+          type: integer
+          description: 章节总数 (用于列表展示)
+    Exercise:
+      type: object
+      required:
+        - prompt
+        - type
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        type:
+          type: string
+          enum: [multiple-choice, single-choice, coding, fill-in-the-blank]
+          description: 练习题类型
+        prompt:
+          type: string
+          description: |
+            题干内容，**支持Markdown格式**。
+            - **代码块**: 使用三个反引号 ```python ... ```
+            - **图片**: 使用 `![alt text](image_url)`
+        options:
+          type: array
+          items:
+            type: string
+          description: 选择题的选项列表（非选择题则该字段为空）
+        answer:
+          type: string
+          description: 题目答案（后端存储，不对学习者返回）
+    Chapter:
+      type: object
+      description: '课程中的一个章节，包含视频、练习和顺序信息。'
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: '章节的唯一ID'
+        order:
+          type: integer
+          description: '章节在课程中的显示顺序，从1开始。'
+        title:
+          type: string
+          description: '章节的标题'
+        videoUrl:
+          type: string
+          format: uri
+          description: '本章节的视频教学链接'
+        exercises:
+          type: array
+          description: '该章节的练习列表，数量最多为7道。'
+          items:
+            $ref: '#/components/schemas/Exercise'
+          maxItems: 7
+        attachments:
+          type: array
+          description: '本章节附带的讲义、代码等附件列表。'
+          items:
+            $ref: '#/components/schemas/Attachment'
+    Attachment:
+      type: object
+      description: '一个可供下载的附件资源，如讲义、代码包等。'
+      properties:
+        fileName:
+          type: string
+          description: "附件的显示名称，例如 '第一章课后习题答案.pdf'。"
+        downloadUrl:
+          type: string
+          format: uri
+          description: '附件的实际下载链接。此链接由后端根据用户权限动态生成。'
+    CommunityPostSummary:
+      type: object
+      description: 用于列表和搜索结果的社群帖子摘要信息。
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        author: # 作者信息也可以是一个摘要对象，比如只含ID和昵称
+          $ref: '#/components/schemas/UserSummary'
+        tags:
+          type: array
+          items:
+            type: string
+        replyCount:
+          type: integer
+        rewardPoints:
+          type: integer
+        postDate:
+          type: string
+          format: date-time
+    RegisterRequest:
+      type: object
+      description: 用户注册时提交的全部信息
+      # 必填字段
+      required:
+        - nickname
+        - phone
+        - mail
+        - verificationCode
+      properties:
+        name:
+          type: string
+          description: 真实姓名
+        nickname:
+          type: string
+          description: 用户昵称（必填）
+        phone:
+          type: string
+          description: 手机号（必填，唯一）
+          # 在 description 中注明唯一性和外部服务
+          example: 13800001234
+        mail:
+          type: string
+          format: email
+          description: 邮箱（必填，唯一）
+        verificationCode:
+          type: string
+          description: 手机或邮箱收到的验证码（必填，由阿里短信/邮箱服务提供）
+        ageGroup:
+          type: string
+          description: 年龄段
+          enum:
+            - 小学
+            - 初中
+            - 高中
+            - 成人
+        gender:
+          type: string
+          description: 性别
+          enum:
+            - 男
+            - 女
+            - 不想告知
+        interests:
+          type: array
+          description: 兴趣选项（可多选）
+          items:
+            type: string
+            enum:
+              - 代码学习
+              - 思维训练
+              - 游戏开发
+              - 网页爬虫
+              - 智能体调用
+    CommunityPost:
+      type: object
+      description: 社群主贴，可以作为悬赏帖或讨论帖。
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: 社群帖子ID
+        title:
+          type: string
+          description: 帖子标题
+        author:
+          $ref: '#/components/schemas/UserSummary'
+          description: 发帖人信息
+        status:
+          type: string
+          enum: [pending_review, published, rejected, archived]
+          readOnly: true
+          description: |
+            社群帖子的状态:
+            - `pending_review`: 待审核
+            - `published`: 已发布 (只有此状态的帖子在列表中可见)
+            - `rejected`: 审核被拒
+            - `archived`: 已归档/用户删除
+        description:
+          type: string
+          description: 帖子描述或详细内容
+        tags:
+          type: array
+          items:
+            type: string
+          description: 社群标签
+        isCollected:
+          type: boolean
+          readOnly: true
+          description: 当前用户是否已收藏该社群
+        rewardPoints:
+          type: integer
+          description: 悬赏积分数 (如果是非悬赏帖则为0或null)
+        postDate:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 发帖日期
+        replyCount:
+          type: integer
+          readOnly: true
+          description: 回复总数
+        bestAnswerId:
+          type: integer
+          nullable: true
+          description: 最佳答案的回复ID (如果已采纳)
+
+        relatedCourseId:
+          type: integer
+          nullable: true
+          description: 关联的课程ID（如果是课程自动生成的社群）
+        relatedGalleryItemId:
+          type: integer
+          nullable: true
+          description: 关联的画廊作品ID（如果是作品自动生成的社群）
+    CommunityReply:
+      type: object
+      description: 社群回复/回帖
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: 回复ID
+        postId:
+          type: integer
+          readOnly: true
+          description: 所属社群帖子ID
+        author:
+          $ref: '#/components/schemas/UserSummary'
+          description: 回复人信息
+        content:
+          type: string
+          description: 回复内容
+        replyDate:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 回复日期
+        isBestAnswer:
+          type: boolean
+          readOnly: true
+          description: 是否已被采纳为最佳答案
+    Tag:
+      type: object
+      description: 全站通用的内容标签模型，包含分类信息。
+      properties:
+        name:
+          type: string
+          description: 标签名称
+        type:
+          type: string
+          enum: [course, community, gallery]
+          description: 标签所属的业务类型，前端可根据此类型决定展示颜色。
+        usageCount:
+          type: integer
+          description: 全站使用该标签的次数
+    GalleryItem:
+      type: object
+      description: 用户上传的画廊作品模型。
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          description: 作品ID
+        title:
+          type: string
+          description: 作品标题
+        author:
+          $ref: '#/components/schemas/UserSummary'
+          description: 作品作者信息
+        description:
+          type: string
+          description: 作品详细描述
+        coverImage:
+          type: string
+          format: uri
+          description: 作品封面图片URL
+        tags:
+          type: array
+          items:
+            type: string
+          description: 作品标签列表
+        version:
+          type: string
+          readOnly: true
+          description: 版本号（由系统根据过审日期自动生成）
+        requiredPoints:
+          type: integer
+          description: 下载该作品所需的积分
+        prerequisiteWorkId:
+          type: integer
+          nullable: true
+          description: '前置作品ID。如果设置了此ID，用户必须先购买前置作品，才能购买当前作品。'
+        rating:
+          type: number
+          format: float
+          readOnly: true
+          description: '作品的平均评分。注意：此分数每周刷新一次，不会实时反映最新的用户评分。'
+        isCollected:
+          type: boolean
+          readOnly: true
+          description: 当前用户是否已收藏该作品
+        # 核心关联属性
+        communityId:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: 关联的社群帖子ID（作品发布时自动生成）
+        status:
+          type: string
+          enum: [pending_review, published, rejected, archived]
+          readOnly: true
+          description: '作品的当前状态。'
+    GalleryItemSummary:
+      type: object
+      description: 用于列表展示的画廊作品摘要信息。
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        coverImage:
+          type: string
+          format: uri
+        author: # 作者信息摘要
+          # ...
+        requiredPoints:
+          type: integer
+        downloadCount: # <--- 新增：总下载数
+          type: integer
+          description: 该作品的总下载数量
+        collectionCount: # <--- 新增：总收藏数
+          type: integer
+          description: 该作品的总收藏数量
+    GalleryItemRequest:
+      allOf:
+        - $ref: '#/components/schemas/GalleryItem'
+      properties:
+        id:
+          type: integer
+          description: 编辑时需要提供作品ID
+          nullable: true
+        requiredPoints:
+          type: integer
+          description: 下载所需积分
+    SupportedWorkRecord:
+      type: object
+      description: 用户支持（购买/下载）画廊作品的记录。
+      properties:
+        supportedDate:
+          type: string
+          format: date-time
+          description: 用户购买/下载该作品的具体日期和时间。
+        versionAtPurchase:
+          type: string
+          description: 用户购买时，作品的版本号。
+        work:
+          $ref: '#/components/schemas/GalleryItem'
+          description: 作品本身的详细信息。
+    CertificationRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        applicant: # 申请人信息
+          $ref: '#/components/schemas/User'
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        certificationFileUrl:
+          type: string
+          format: uri
+        notes:
+          type: string
+        submissionDate:
+          type: string
+          format: date-time
+    ContentDashboard:
+      type: object
+      description: '用于展示课程或作品经营情况的数据看板模型。'
+      properties:
+        totalSubscriptionsOrDownloads:
+          type: integer
+          description: '总订阅数（对于课程）或总下载数（对于作品）。'
+        totalCollections:
+          type: integer
+          description: '总收藏数。'
+        netPointsEarned:
+          type: integer
+          description: '为创建者带来的总净积分收入（已扣除35%平台交易成本）。'
+        topRelatedTags:
+          type: array
+          description: '与此内容最相关的3个标签。可以是内容本身的标签，或通过算法分析得出。'
+          items:
+            type: string
+          example: ['代码学习', '游戏开发', '智能体调用']
+        earningsOverTime:
+          type: array
+          description: '一段时间内的收入趋势数据点，用于绘制图表。'
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+                description: '日期（例如 YYYY-MM-DD）'
+              points:
+                type: integer
+                description: '该日期的净积分收入'
+    AdminDashboard:
+      type: object
+      description: '用于展示平台整体运营情况的管理员数据看板模型。'
+      properties:
+        # --- 核心KPI ---
+        totalUsers:
+          type: integer
+          description: '平台总注册用户数。'
+        newUsersLast30Days:
+          type: integer
+          description: '过去30天内新增的注册用户数。'
+        totalCourses:
+          type: integer
+          description: '平台已发布的课程总数。'
+        totalGalleryWorks:
+          type: integer
+          description: '平台已发布的作品总数。'
+
+        # --- 用户画像 (User Demographics) ---
+        userDemographics:
+          type: object
+          properties:
+            byAgeGroup:
+              type: array
+              description: '按年龄段分布的用户数量。'
+              items:
+                type: object
+                properties:
+                  ageGroup:
+                    type: string
+                    example: '高中'
+                  count:
+                    type: integer
+            byGender:
+              type: array
+              description: '按性别分布的用户数量。'
+              items:
+                type: object
+                properties:
+                  gender:
+                    type: string
+                    example: '女'
+                  count:
+                    type: integer
+
+        # --- 内容与审核指标 ---
+        contentMetrics:
+          type: object
+          properties:
+            totalExercises:
+              type: integer
+              description: '全平台所有课程中的练习题总数。'
+            totalCommunityPosts:
+              type: integer
+              description: '全平台发布的社群帖子总数。'
+            pendingCourses:
+              type: integer
+              description: '当前等待审核的课程数量。'
+            pendingWorks:
+              type: integer
+              description: '当前等待审核的作品数量。'
+            pendingCertifications:
+              type: integer
+              description: '当前等待处理的资质认证申请数量。'
+            pendingCommunityPosts:
+              type: integer
+              description: '当前等待审核的社群帖子数量。'
+
+        # --- 平台参与度指标 ---
+        engagementMetrics:
+          type: object
+          properties:
+            top5UsedTags:
+              type: array
+              description: '全平台使用次数最多的5个标签。'
+              items:
+                type: object
+                properties:
+                  tagName:
+                    type: string
+                  usageCount:
+                    type: integer
+            top5SubscribedCourses:
+              type: array
+              description: '订阅人数最多的5个课程摘要。'
+              items:
+                $ref: '#/components/schemas/CourseSummary'
+            top5DownloadedWorks:
+              type: array
+              description: '下载次数最多的5个作品摘要。'
+              items:
+                $ref: '#/components/schemas/GalleryItemSummary'
+      # 在 components/schemas 中添加
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          description: '内部定义的、可被前端用于特定逻辑处理的错误码'
+          example: 'INSUFFICIENT_POINTS'
+        example:
+          errorCode: 'INSUFFICIENT_POINTS'
+          message: '您的积分不足，无法完成此操作。'

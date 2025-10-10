@@ -1,0 +1,38 @@
+# backend/requirements.txt
+
+# Django 核心
+django==4.2.5
+djangorestframework==3.14.0
+
+# 数据库驱动
+psycopg2-binary==2.9.7
+
+# API 认证
+djangorestframework-simplejwt==5.3.0
+
+# 异步任务
+celery==5.3.4
+redis==5.0.1
+django-redis==5.4.0
+
+# 搜索引擎
+django-elasticsearch-dsl==8.1
+elasticsearch==8.9.0
+
+# .env 文件加载
+django-environ==0.11.2
+
+# Web 服务器
+gunicorn==21.2.0
+django-cors-headers==4.3.1
+Pillow==10.2.0
+
+# 版本控制
+django-reversion==5.0.1
+
+# 用于富文本 HTML 清洗
+django-bleach==3.1.0
+django-tinymce==4.1.0
+
+# Admin 后台美化主题
+django-jazzmin==2.6.0 

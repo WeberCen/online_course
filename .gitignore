@@ -1,0 +1,56 @@
+# ========================
+# 1. 编译和依赖文件 (通用)
+# ========================
+# Node.js 依赖文件夹（前端 Vue 和大部分构建工具）
+node_modules/
+/dist/
+/out/
+/build/
+
+# IDE/编辑器配置
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# ========================
+# 2. Python / Django 后端
+# ========================
+# Python 虚拟环境
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+
+# Django 相关
+# SQLite 数据库文件 (如果使用默认的 sqlite3)
+*.sqlite3
+db.sqlite3
+
+# 媒体文件和日志文件 (通常不应该纳入版本控制)
+/media/
+/logs/
+*.log
+
+# 静态文件收集目录 (由 collectstatic 生成)
+/static/
+
+# IDE 和工具
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# ========================
+# 3. Vue 3 / 前端特定
+# ========================
+# Vite 或 Webpack 构建输出目录
+/dist/
+/temp/
+
+# npm/yarn/pnpm 的锁定文件
+npm-debug.log
+yarn-error.log
+pnpm-debug.log

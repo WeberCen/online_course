@@ -1,0 +1,138 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .dashboard-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .dashboard-card h2 {
+            margin-top: 0;
+            font-size: 1.2em;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .kpi-item p { margin: 0; color: #666; }
+        .kpi-item .metric { font-size: 2em; font-weight: 600; color: #007bff; }
+    </style>
+{% endblock %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+
+<div class="dashboard-grid">
+    <div class="dashboard-card">
+        <h2>核心 KPI</h2>
+        <div class="kpi-grid">
+            <div class="kpi-item">
+                <p>总用户数</p>
+                <span class="metric">{{ kpi_data.totalUsers }}</span>
+            </div>
+            <div class="kpi-item">
+                <p>近30日新增</p>
+                <span class="metric">{{ kpi_data.newUsersLast30Days }}</span>
+            </div>
+            <div class="kpi-item">
+                <p>已发布课程</p>
+                <span class="metric">{{ kpi_data.totalCourses }}</span>
+            </div>
+            <div class="kpi-item">
+                <p>已发布作品</p>
+                <span class="metric">{{ kpi_data.totalGalleryWorks }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-card">
+        <h2>内容与审核</h2>
+        <p>待审核课程: {{ review_metrics_data.pendingCourses }}</p>
+        <p>待审核作品: {{ review_metrics_data.pendingWorks }}</p>
+        <p>待处理认证: {{ review_metrics_data.pendingCertifications }}</p>
+        <p>待审核帖子: {{ review_metrics_data.pendingCommunityPosts }}</p>
+    </div>
+
+    <div class="dashboard-card">
+        <h2>用户画像</h2>
+        <canvas id="ageChart"></canvas>
+    </div>
+    <div class="dashboard-card">
+        <h2>性别分布</h2>
+        <canvas id="genderChart"></canvas>
+    </div>
+
+    <div class="dashboard-card">
+        <h2>Top 5 热门标签</h2>
+        <canvas id="tagsChart"></canvas>
+    </div>
+    <div class="dashboard-card">
+        <h2>Top 5 热门课程</h2>
+        <canvas id="coursesChart"></canvas>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 安全地从 Django context 获取数据
+    const userDemographics = {{ user_demographics_data|safe }};
+    const engagementMetrics = {{ engagement_metrics_data|safe }};
+
+    // 辅助函数，用于生成图表
+    function createBarChart(canvasId, chartTitle, data) {
+        new Chart(document.getElementById(canvasId), {
+            type: 'bar',
+            data: {
+                labels: Object.keys(data),
+                datasets: [{
+                    label: chartTitle,
+                    data: Object.values(data),
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: { indexAxis: 'y', responsive: true }
+        });
+    }
+
+    function createPieChart(canvasId, data) {
+        new Chart(document.getElementById(canvasId), {
+            type: 'pie',
+            data: {
+                labels: Object.keys(data),
+                datasets: [{
+                    data: Object.values(data),
+                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'],
+                }]
+            },
+            options: { responsive: true }
+        });
+    }
+
+    // 绘制所有图表
+    createPieChart('ageChart', {{ age_chart_labels|safe }}, {{ age_chart_data|safe }});
+    createPieChart('genderChart', {{ gender_chart_labels|safe }}, {{ gender_chart_data|safe }});
+    createBarChart('tagsChart', '引用次数', {{ tags_chart_labels|safe }}, {{ tags_chart_data|safe }});
+    createBarChart('coursesChart', '订阅人数', {{ courses_chart_labels|safe }}, {{ courses_chart_data|safe }});
+});
+</script>
+{% endblock %}

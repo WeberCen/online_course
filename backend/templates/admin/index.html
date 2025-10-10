@@ -1,0 +1,10 @@
+{% extends "admin/index.html" %}
+
+{% block content_title %}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        {{ block.super }}
+        <a href="{% url 'admin:dashboard' %}" class="button" style="background-color: #417690;">
+            View Data Dashboard
+        </a>
+    </div>
+{% endblock %}
