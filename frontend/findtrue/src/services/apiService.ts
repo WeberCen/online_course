@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { Course, CourseDetail, ExerciseAnswer, Progress, SubmissionResult,
- GalleryItem, GalleryItemDetail, CommunityPost,CommunityReply,CommunityPostListItem, Community} from '../types'; 
+ GalleryItem, GalleryItemDetail, CommunityPost,CommunityReply,CommunityPostListItem, Community, MessageThread, MessageThreadDetail,Message} from '../types'; 
 
 const apiClient = axios.create({
   baseURL: 'http://127.0.0.1:8000/v1/',
@@ -138,4 +138,19 @@ export const uploadEditorImage = (file: File) => {
       'Content-Type': 'multipart/form-data',
     },
   });
+};
+export const getMessageThreads = () => {
+  return apiClient.get<MessageThread[]>('/my/messages/');
+};
+
+export const getMessageThreadDetail = (threadId: string) => {
+  return apiClient.get<MessageThreadDetail>(`/my/messages/${threadId}/`);
+};
+
+export const createMessageThread = (data: { subject: string; content: string; recipient_id: number }) => {
+  return apiClient.post('/my/messages/', data);
+};
+
+export const deleteMessageThread = (threadId: string) => {
+  return apiClient.delete(`/my/messages/${threadId}/`);
 };

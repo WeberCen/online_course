@@ -116,3 +116,28 @@ export interface CommunityPost {
   replies: CommunityReply[];
   likes: number[];
 } 
+export interface Message {
+  id: number;
+  sender: Author;
+  content: string;
+  sent_at: string;
+}
+
+// 用于会话列表页的摘要信息
+export interface MessageThread {
+  id: number;
+  subject: string;
+  thread_type: string;
+  last_message: Message | null;
+  created_at: string;
+}
+
+// 用于会话详情页的完整信息
+export interface MessageThreadDetail {
+  id: number;
+  subject: string;
+  thread_type: string;
+  participants: Author[];
+  created_at: string;
+  messages: Message[];
+}

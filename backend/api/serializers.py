@@ -6,7 +6,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User,CertificationRequest,Course,Chapter,Exercise
 from .models import (Subscription, Collection, 
                      GalleryItem, GalleryCollection, GalleryDownloadRecord, 
-                     GalleryItemRating,Community,CommunityPost,CommunityReply)
+                     GalleryItemRating,Community,CommunityPost,CommunityReply,
+                     Message,MessageThread)
  
 class UserRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
@@ -415,3 +416,53 @@ class CommunityReplyCreateSerializer(serializers.ModelSerializer):
         model = CommunityReply
         fields = ['content']
 
+# ===============================================
+# =======    站内信 API Serializers  =======
+# ===============================================
+
+class MessageSerializer(serializers.ModelSerializer):
+    """用于嵌套在会话中，显示单条消息"""
+    sender = UserSummarySerializer(read_only=True)
+    
+    class Meta:
+        model = Message
+        fields = ['id', 'sender', 'content', 'sent_at']
+
+class MessageThreadListSerializer(serializers.ModelSerializer):
+    """ 用于会话列表的序列化器"""
+    last_message = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = MessageThread
+        fields = ['id', 'subject', 'thread_type', 'last_message', 'created_at']
+
+    def get_last_message(self, obj):
+        # 获取该会话的最后一条消息用于预览
+        if hasattr(obj, 'messages') and obj.messages.all():
+            # 这里的 .all() 不会触发新查询，因为它正在访问 Prefetch 缓存
+            last_msg = obj.messages.all()[0]
+            return MessageSerializer(last_msg).data
+        return None
+
+class MessageCreateSerializer(serializers.Serializer):
+    """用于用户发送新消息的序列化器"""
+    subject = serializers.CharField(max_length=255)
+    content = serializers.CharField()
+    recipient_id = serializers.IntegerField()
+
+    def validate_recipient_id(self, value):
+        if not User.objects.filter(pk=value).exists():
+            raise serializers.ValidationError("指定的收件人不存在。")
+        return value
+    
+class MessageThreadDetailSerializer(serializers.ModelSerializer):
+    """
+    【GET /my/messages/{id}】: 用于单个会话详情页的序列化器
+    """
+    # 嵌套 MessageSerializer，并指明这是一个包含多条消息的列表
+    messages = MessageSerializer(many=True, read_only=True)
+    participants = UserSummarySerializer(many=True, read_only=True)
+
+    class Meta:
+        model = MessageThread
+        fields = ['id', 'subject', 'thread_type', 'participants', 'created_at', 'messages']

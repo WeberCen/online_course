@@ -17,7 +17,8 @@ from .models import (User, Tag, Course, Chapter, Exercise,
                       Community,CommunityPost,CommunityReply,PointsTransaction,
                       VipPlan,
                       PendingCertificationRequest,PendingCommunityPost,
-                      PendingCourse,PendingGalleryItem)
+                      PendingCourse,PendingGalleryItem,
+                      Message,MessageThread)
 
 # --- 自定义表单 ---
 class CommunityAdminForm(forms.ModelForm):
@@ -134,7 +135,17 @@ class CommunityReplyInline(admin.TabularInline):
     fields = ('author', 'content', 'created_at')
     readonly_fields = ('created_at',)
     autocomplete_fields = ['author']
-#核心管理模块
+
+class MessageInline(admin.TabularInline):
+    model = Message
+    extra = 1
+    formfield_overrides = {
+        BleachField: {'widget': TinyMCE(attrs={'cols': 80, 'rows': 15})},
+    }
+    fields = ('sender', 'recipient', 'content', 'cc_recipient', 'sent_at')
+    readonly_fields = ('sent_at',)
+    autocomplete_fields = ['sender', 'recipient', 'cc_recipient']
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     actions = ['suspend_accounts', 'activate_accounts', 'promote_to_artist']
@@ -488,5 +499,48 @@ class PendingCertificationRequestAdmin(admin.ModelAdmin):
 @admin.register(CertificationRequest)
 class CertificationRequestAdmin(admin.ModelAdmin):
     list_display = ('applicant', 'status', 'submissionDate')
+    def get_model_perms(self, request):
+        return {} 
+    
+# ===============================================
+# =======       站内信系统         =======
+# ===============================================
+
+@admin.register(MessageThread)
+class MessageThreadAdmin(admin.ModelAdmin):
+    list_display = ('subject', 'thread_type', 'created_at')
+    search_fields = ('subject', 'messages__content', 'participants__username')
+    list_filter = ('thread_type',)
+    
+    autocomplete_fields = ['participants']
+    filter_horizontal = ('participants',)
+    inlines = [MessageInline]
+
+    def save_formset(self, request, form, formset, change):
+        instances = formset.save(commit=False)
+        thread = form.instance
+        
+        participants = set(thread.participants.all())
+        
+        for instance in instances:
+            if not instance.pk and isinstance(instance, Message):
+                if not instance.cc_recipient:
+                    admin_user = User.objects.filter(is_superuser=True).first()
+                    if admin_user:
+                        instance.cc_recipient = None
+            instance.save()
+            
+            if instance.sender: participants.add(instance.sender)
+            if instance.recipient: participants.add(instance.recipient)
+            if instance.cc_recipient: participants.add(instance.cc_recipient)
+
+        formset.save_m2m()
+        thread.participants.set(participants)
+        super().save_model(request, thread, form, change)
+
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ('thread', 'sender', 'recipient', 'sent_at')
     def get_model_perms(self, request):
         return {} 

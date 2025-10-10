@@ -532,3 +532,65 @@ class PendingCertificationRequest(CertificationRequest):
         proxy = True
         verbose_name = '待处理认证'
         verbose_name_plural = '待处理认证'
+# ===============================================
+# =======         站内信模型           =======
+# ===============================================
+
+class MessageThread(models.Model):
+    """
+    站内信会话主题模型。
+    它像一个“文件夹”，聚合了所有相关的消息。
+    """
+    class ThreadType(models.TextChoices):
+        NOTIFICATION = 'notification', '系统通知'
+        CONVERSATION = 'conversation', '用户会话'
+
+    subject = models.CharField(max_length=255, verbose_name="主题")
+    thread_type = models.CharField(
+        max_length=20, 
+        choices=ThreadType.choices, 
+        default=ThreadType.CONVERSATION, 
+        verbose_name="会话类型"
+    )
+    participants = models.ManyToManyField(User, related_name='message_threads', verbose_name="所有参与者")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+ 
+    content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True)
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    def __str__(self):
+        return self.subject
+
+    class Meta:
+        verbose_name = "站内信会话"
+        verbose_name_plural = verbose_name
+        ordering = ['-created_at']
+
+class Message(models.Model):
+    """
+    单条站内信模型。
+    它像文件夹里的一封“信件”。
+    """
+    thread = models.ForeignKey(MessageThread, on_delete=models.CASCADE, related_name='messages', verbose_name="所属会话")
+    sender = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='sent_messages', verbose_name="发信人")
+    recipient = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='received_direct_messages', verbose_name="收件人")
+    content = BleachField(verbose_name="内容")
+    cc_recipient = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='cc_messages', 
+        verbose_name="抄送人"
+    )
+    sent_at = models.DateTimeField(auto_now_add=True, verbose_name="发送时间")
+
+    def __str__(self):
+        return f"Reply from {self.sender} to {self.recipient} in thread '{self.thread.subject}'"
+
+    class Meta:
+        verbose_name = "单条消息"
+        verbose_name_plural = verbose_name
+        ordering = ['sent_at']

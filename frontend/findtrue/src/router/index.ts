@@ -9,6 +9,9 @@ import CommunitiesView from '../views/CommunitiesView.vue'
 import CommunityDetailView from '@/views/CommunityDetailView.vue'
 import CommunityPostsView from '@/views/CommunityPostsView.vue'
 import CreatePostView from '../views/CreatePostView.vue' 
+import MessageInboxView from '../views/MessageInboxView.vue';
+import MessageThreadDetailView from '../views/MessageThreadDetailView.vue'
+import CreateMessageThreadView from '../views/CreateMessageThreadView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -57,6 +60,23 @@ const router = createRouter({
       name: 'community-post-detail',
       component: CommunityDetailView
     }
+    ,
+    {
+      path: '/messages',
+      name: 'message-inbox',
+      component: MessageInboxView
+    },
+    {
+      path: '/messages/:threadId',
+      name: 'message-thread-detail',
+      component: MessageThreadDetailView
+    },
+    {
+      path: '/messages/new',
+      name: 'create-message-thread',
+      component: CreateMessageThreadView
+    }
+
 
   ]
 })

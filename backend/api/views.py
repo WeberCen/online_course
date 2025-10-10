@@ -14,6 +14,7 @@ from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db.models import Prefetch, OuterRef, Subquery, Max
 from .permissions import CanPostOrReplyInCommunity
 from .tasks import send_verification_code_email
 from .serializers import (
@@ -25,12 +26,13 @@ from .serializers import (
     CourseProgressSerializer, ExerciseSubmissionSerializer,
     GalleryListSerializer, GalleryDetailSerializer,
     CommunityListSerializer, CommunityPostListSerializer, CommunityPostDetailSerializer,
-    CommunityPostCreateSerializer,CommunityReplyCreateSerializer)
+    CommunityPostCreateSerializer,CommunityReplyCreateSerializer,
+    MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer)
 from .models import (CertificationRequest,Course,Chapter,
                      Subscription,Collection,Exercise,UserChapterCompletion,
                      GalleryItem,GalleryCollection,GalleryDownloadRecord,
                      Community,CommunityPost,CommunityReply,
-                     User,Tag)
+                     User,Tag,Message,MessageThread)
 
 
 User = get_user_model() # 获取当前项目使用的 User 模型
@@ -850,3 +852,76 @@ def dashboard_view(request):
     }
 
     return render(request, 'admin/dashboard.html', context)
+
+# ===============================================
+# =======      站内信视图        =======
+# ===============================================
+class MessageThreadListCreateView(generics.ListCreateAPIView):
+    """
+    GET: 获取当前用户的所有会话列表
+    POST: 用户发送一条新消息（开启一个新会话）
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return MessageCreateSerializer
+        return MessageThreadListSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        # 1. 找到每个会话的最后一条消息的 ID
+        latest_message_subquery = Message.objects.filter(
+            thread=OuterRef('pk')
+        ).order_by('-sent_at').values('pk')[:1] # 找到每条线程的最新消息ID
+        
+        # 2. 创建 Prefetch 对象，只预取那些 ID 在子查询结果中的 Message
+        prefetch_messages = Prefetch(
+            'messages',
+            queryset=Message.objects.filter(
+                pk__in=Subquery(latest_message_subquery)
+            ).select_related('sender') # 优化：同时预加载发信人信息
+        )
+        queryset = user.message_threads.all().prefetch_related(prefetch_messages).order_by('-created_at')
+        
+        return queryset
+
+    def perform_create(self, serializer):
+        # POST 请求时，执行创建逻辑
+        subject = serializer.validated_data['subject']
+        content = serializer.validated_data['content']
+        recipient = get_object_or_404(User, pk=serializer.validated_data['recipient_id'])
+        sender = self.request.user
+
+        thread = MessageThread.objects.create(subject=subject)
+        thread.participants.add(sender, recipient)
+        
+        admin_user = User.objects.filter(is_superuser=True).first()
+        Message.objects.create(
+            thread=thread,
+            sender=sender,
+            recipient=recipient,
+            content=content,
+            cc_recipient=admin_user
+        )
+        
+    def create(self, request, *args, **kwargs):
+        # 重写 create 方法以返回自定义消息，而不是序列化器数据
+        super().create(request, *args, **kwargs)
+        return Response({"message": "消息已成功发送。"}, status=status.HTTP_201_CREATED)
+
+class MessageThreadRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    """
+    GET /my/messages/{pk}/: 获取单个会话详情
+    DELETE /my/messages/{pk}/: 用户离开会话
+    """
+    queryset = MessageThread.objects.all()
+    serializer_class = MessageThreadDetailSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # 确保用户只能查看/删除自己参与的会话
+        return self.request.user.message_threads.all()
+    
+    def perform_destroy(self, instance):
+        instance.participants.remove(self.request.user)

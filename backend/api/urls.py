@@ -9,7 +9,7 @@ CourseListView, CourseDetailView,
 CourseCollectionView,CourseSubscriptionView,CourseProgressView,ExerciseSubmissionView,
 GalleryListView,GalleryDetailView,GalleryCollectionView,
 CommunityListView,CommunityPostDetailView,CommunityPostListCreateView,CommunityReplyCreateView,CommunityPostDestroyView,CommunityPostLikeView,
-)
+MessageThreadListCreateView,MessageThreadRetrieveDestroyView)
 
 
 urlpatterns = [
@@ -47,4 +47,7 @@ urlpatterns = [
          CommunityPostLikeView.as_view(), name='community-post-like'),        
     path('posts/<int:pk>/replies/', 
          CommunityReplyCreateView.as_view(), name='post-reply-create'),
+    path('my/messages/', MessageThreadListCreateView.as_view(), name='my-messages-list-create'),
+    path('my/messages/<int:pk>/', MessageThreadRetrieveDestroyView.as_view(), name='my-messages-detail-destroy'),
+
     ]
