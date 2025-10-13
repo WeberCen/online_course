@@ -367,7 +367,7 @@ class CommunityPostListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CommunityPost
-        fields = ['id', 'title', 'author', 'rewardPoints', 'created_at', 'reply_count']
+        fields = ['id', 'title', 'author', 'rewardPoints', 'created_at', 'reply_count','community']
 
     def get_reply_count(self, obj):
         # 计算该帖子下的回复总数
@@ -415,6 +415,13 @@ class CommunityReplyCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommunityReply
         fields = ['content']
+
+class CommunityCreateSerializer(serializers.ModelSerializer):
+    """【创建社群用】的序列化器"""
+    class Meta:
+        model = Community
+        # 创作者需要提交的字段
+        fields = ['name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item']
 
 # ===============================================
 # =======    站内信 API Serializers  =======
@@ -466,3 +473,44 @@ class MessageThreadDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageThread
         fields = ['id', 'subject', 'thread_type', 'participants', 'created_at', 'messages']
+
+# ===============================================
+# =======    个人中心 API Serializers     =======
+# ===============================================
+
+class MyCollectionsSerializer(serializers.Serializer):
+    """【/my/collections】 我的收藏"""
+    courses = CourseListSerializer(many=True, read_only=True)
+    gallery_items = GalleryListSerializer(many=True, read_only=True)
+
+class MySupportedSerializer(serializers.Serializer):
+    """【/my/supported】 我的已购"""
+    courses = CourseListSerializer(many=True, read_only=True)
+    gallery_items = GalleryListSerializer(many=True, read_only=True)
+
+class MyCreationsSerializer(serializers.Serializer):
+    """【/my/creations】 我的创作"""
+    courses = CourseListSerializer(many=True, read_only=True)
+    gallery_items = GalleryListSerializer(many=True, read_only=True)
+    founded_communities = CommunityListSerializer(many=True, read_only=True)
+
+class MyParticipationsSerializer(serializers.Serializer):
+    """【/my/participations】 我的参与"""
+    # 直接返回帖子列表
+    posts = CommunityPostListSerializer(many=True, read_only=True)
+class CourseCreateSerializer(serializers.ModelSerializer):
+    """【创建课程用】的序列化器"""
+    class Meta:
+        model = Course
+        fields = ['title', 'description', 'coverImage', 'tags', 'pricePoints', 'is_vip_free']
+class GalleryItemCreateSerializer(serializers.ModelSerializer):
+    """【创建作品用】的序列化器"""
+    class Meta:
+        model = GalleryItem
+        fields = ['title', 'description', 'coverImage', 'workFile', 'tags', 'requiredPoints', 'prerequisiteWork', 'version', 'is_vip_free']
+class CommunityCreateSerializer(serializers.ModelSerializer):
+    """【创建社群用】的序列化器 (最终版)"""
+    class Meta:
+        model = Community
+        # 创作者需要提交的字段
+        fields = ['name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item']

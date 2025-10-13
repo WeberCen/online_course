@@ -81,6 +81,7 @@ class GalleryDownloadRecordInline(admin.TabularInline):
 
 class AuthoredCoursesInline(admin.TabularInline):
     model = Course
+    fk_name = 'author'
     extra = 0
     verbose_name_plural = '创建的课程'
     fields = ('title', 'status', 'created_at')
@@ -88,6 +89,7 @@ class AuthoredCoursesInline(admin.TabularInline):
 
 class AuthoredGalleryItemsInline(admin.TabularInline):
     model = GalleryItem
+    fk_name = 'author'
     extra = 0
     verbose_name_plural = '发布的画廊作品'
     fields = ('title', 'status', 'created_at')
@@ -95,6 +97,7 @@ class AuthoredGalleryItemsInline(admin.TabularInline):
 
 class CertificationRequestInline(admin.TabularInline):
     model = CertificationRequest
+    fk_name = 'applicant'
     extra = 0
     verbose_name_plural = '提交的认证申请'
     fields = ('status', 'submissionDate', 'certificationFile')

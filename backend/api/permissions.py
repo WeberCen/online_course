@@ -58,3 +58,8 @@ class CanPostOrReplyInCommunity(BasePermission):
             
         # 只有通过了所有存在的检查，才能最终被允许
         return True
+    
+class IsCreator(BasePermission):
+    message = "You must be a creator (Student-Artist) to perform this action."
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'Student-Artist'

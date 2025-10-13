@@ -2,13 +2,13 @@
   <div class="message-inbox-view">
     <div class="header">
       <h1>我的消息</h1>
-      <router-link :to="{ name: 'compose-message' }" class="compose-btn">写新消息</router-link>
+      <router-link :to="{ name: 'create-message-thread' }" class="compose-btn">写新消息</router-link>
     </div>
     <div v-if="loading" class="loading">正在加载消息列表...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="threads.length > 0" class="thread-list">
       <div v-for="thread in threads" :key="thread.id" class="thread-item">
-        <router-link :to="{ name: 'conversation-detail', params: { id: thread.id } }" class="thread-link">
+        <router-link :to="{ name: 'message-thread-detail', params: { threadId: thread.id } }" class="thread-link">
           <div class="thread-info">
             <strong class="subject">{{ thread.subject }}</strong>
             <p v-if="thread.last_message" class="last-message">

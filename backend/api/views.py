@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import generics, status,mixins,serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import get_object_or_404,render
 from django.utils import timezone
@@ -15,19 +15,20 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Prefetch, OuterRef, Subquery, Max
-from .permissions import CanPostOrReplyInCommunity
+from .permissions import CanPostOrReplyInCommunity, IsCreator
 from .tasks import send_verification_code_email
 from .serializers import (
-    UserRegisterSerializer, UserProfileSerializer, UserLoginSerializer,
+    UserRegisterSerializer, UserProfileSerializer, UserSummarySerializer,UserLoginSerializer,
     ChangePhoneInitiateSerializer, ChangePhoneVerifyNewSerializer, ChangePhoneCommitSerializer,
     ChangeEmailInitiateSerializer, ChangeEmailVerifyNewSerializer, ChangeEmailCommitSerializer,
     CertificationRequestSerializer, EditorImageSerializer,CourseListSerializer, CourseDetailSerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
     CourseProgressSerializer, ExerciseSubmissionSerializer,
-    GalleryListSerializer, GalleryDetailSerializer,
+    GalleryListSerializer, GalleryDetailSerializer, CourseCreateSerializer,GalleryItemCreateSerializer,CommunityCreateSerializer,
     CommunityListSerializer, CommunityPostListSerializer, CommunityPostDetailSerializer,
     CommunityPostCreateSerializer,CommunityReplyCreateSerializer,
-    MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer)
+    MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer,
+    MyCollectionsSerializer,MySupportedSerializer,MyCreationsSerializer,MyParticipationsSerializer)
 from .models import (CertificationRequest,Course,Chapter,
                      Subscription,Collection,Exercise,UserChapterCompletion,
                      GalleryItem,GalleryCollection,GalleryDownloadRecord,
@@ -72,21 +73,6 @@ class UserLoginView(generics.GenericAPIView):
             'user': user_data,
             'tokens': tokens
         }, status=status.HTTP_200_OK)
-
-
-class UserProfileView(generics.RetrieveUpdateAPIView):
-    """
-    处理获取和更新当前登录用户信息的视图
-    GET: 返回当前用户信息
-    PUT/PATCH: 更新当前用户信息
-    """
-    serializer_class = UserProfileSerializer
-    permission_classes = [IsAuthenticated]  # <-- 核心：确保只有认证用户才能访问
-
-    def get_object(self):
-        # 这个方法是 RetrieveUpdateAPIView 的标准部分，
-        # 我们重写它，使其永远返回当前发出请求的用户 (self.request.user)
-        return self.request.user
     
 class AvatarUpdateView(generics.UpdateAPIView):
     """
@@ -757,6 +743,19 @@ class CommunityReplyCreateView(generics.CreateAPIView):
         post = get_object_or_404(CommunityPost, pk=self.kwargs.get('post_pk'))
         serializer.save(author=self.request.user, post=post)
 
+class CommunityCreateView(generics.CreateAPIView):
+    """
+    POST /creator/communities/
+    允许创作者创建新的社群板块
+    """
+    queryset = Community.objects.all()
+    serializer_class = CommunityCreateSerializer
+    permission_classes = [IsAuthenticated, IsCreator] # <-- 应用创作者权限
+
+    def perform_create(self, serializer):
+        # 自动将创始人设置为当前用户
+        serializer.save(founder=self.request.user)
+
 # ===============================================
 # =======          管理员模块视图          =======
 # ===============================================
@@ -925,3 +924,135 @@ class MessageThreadRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     
     def perform_destroy(self, instance):
         instance.participants.remove(self.request.user)
+
+class UserSearchView(generics.ListAPIView):
+    """
+    根据查询参数 'q' 搜索用户，用于站内信收件人自动补全
+    """
+    serializer_class = UserSummarySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # 从 URL query a参数中获取搜索关键词
+       query = self.request.query_params.get('q', None)
+       if query:
+        return User.objects.filter(
+            Q(username__icontains=query) | 
+            Q(nickname__icontains=query)
+        ).filter(is_active=True)[:10]
+       return User.objects.none() 
+# ===============================================
+# =======     个人中心 API 视图            =======
+# ===============================================
+
+class MyCollectionsView(generics.GenericAPIView):
+    """获取当前用户收藏的所有内容"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = MyCollectionsSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        collected_courses = Course.objects.filter(collectors=user)
+        collected_gallery_items = GalleryItem.objects.filter(collectors=user)
+        
+        data = {
+            'courses': collected_courses,
+            'gallery_items': collected_gallery_items
+        }
+        serializer = self.get_serializer(data)
+        return Response(serializer.data)
+
+class MySupportedView(generics.GenericAPIView):
+    """获取当前用户已订阅/下载的所有内容"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = MySupportedSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        subscribed_courses = Course.objects.filter(subscribers=user)
+        downloaded_gallery_items = GalleryItem.objects.filter(gallerydownloadrecord__user=user)
+        
+        data = {
+            'courses': subscribed_courses,
+            'gallery_items': downloaded_gallery_items
+        }
+        serializer = self.get_serializer(data)
+        return Response(serializer.data)
+
+class MyCreationsView(generics.GenericAPIView):
+    """获取当前用户创建的所有内容"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = MyCreationsSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        authored_courses = Course.objects.filter(author=user)
+        authored_gallery_items = GalleryItem.objects.filter(author=user)
+        founded_communities = Community.objects.filter(founder=user)
+        
+        data = {
+            'courses': authored_courses,
+            'gallery_items': authored_gallery_items,
+            'founded_communities': founded_communities,
+        }
+        serializer = self.get_serializer(data)
+        return Response(serializer.data)
+
+class MyParticipationsView(generics.GenericAPIView):
+    """获取当前用户参与回复过的所有帖子"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = MyParticipationsSerializer
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        # 查找所有该用户回复过的帖子的ID，并去重
+        participated_post_ids = CommunityReply.objects.filter(author=user).values_list('post_id', flat=True).distinct()
+        participated_posts = CommunityPost.objects.filter(pk__in=participated_post_ids)
+        
+        data = {'posts': participated_posts}
+        serializer = self.get_serializer(data)
+        return Response(serializer.data)
+    
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    """
+    处理获取和更新当前登录用户信息的视图
+    GET: 返回当前用户信息
+    PUT/PATCH: 更新当前用户信息
+    """
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]  
+
+    def get_object(self):
+        return self.request.user
+    def post(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+    
+class CourseCreateView(generics.CreateAPIView):
+    """
+    POST /creator/courses/
+    允许创作者创建新课程
+    """
+    queryset = Course.objects.all()
+    serializer_class = CourseCreateSerializer 
+    permission_classes = [IsAuthenticated, IsCreator]
+    parser_classes = [MultiPartParser, FormParser] # 支持封面图上传
+
+    def perform_create(self, serializer):
+        # 自动将作者设为当前用户，初始状态设为 draft (草稿)
+        serializer.save(author=self.request.user, status='draft')
+class GalleryItemCreateView(generics.CreateAPIView):
+    queryset = GalleryItem.objects.all()
+    serializer_class = GalleryItemCreateSerializer
+    permission_classes = [IsAuthenticated, IsCreator] 
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user, status='pending_review')
+class CommunityCreateView(generics.CreateAPIView):
+    queryset = Community.objects.all()
+    serializer_class = CommunityCreateSerializer
+    permission_classes = [IsAuthenticated, IsCreator]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        serializer.save(founder=self.request.user)

@@ -1,8 +1,10 @@
 // frontend/findtrue/src/services/apiService.ts
 
 import axios from 'axios';
-import type { Course, CourseDetail, ExerciseAnswer, Progress, SubmissionResult,
- GalleryItem, GalleryItemDetail, CommunityPost,CommunityReply,CommunityPostListItem, Community, MessageThread, MessageThreadDetail,Message} from '../types'; 
+import type { Author,Course, CourseDetail, ExerciseAnswer, Progress, SubmissionResult,
+ GalleryItem, GalleryItemDetail, CommunityPost,CommunityReply,CommunityPostListItem, 
+ Community, MessageThread, MessageThreadDetail,Message,MyCollections,MySupported,
+ MyCreations,MyParticipations,User,UserProfileUpdatePayload} from '../types'; 
 
 const apiClient = axios.create({
   baseURL: 'http://127.0.0.1:8000/v1/',
@@ -152,5 +154,49 @@ export const createMessageThread = (data: { subject: string; content: string; re
 };
 
 export const deleteMessageThread = (threadId: string) => {
-  return apiClient.delete(`/my/messages/${threadId}/`);
+  return apiClient.delete(`/my/messages/${threadId}/`); 
+};
+
+export const searchUsers = (query: string) => {
+  return apiClient.get<Author[]>(`/users/search/?q=${query}`);
+};
+export const getMyCollections = () => {
+  return apiClient.get<MyCollections>('/my/collections/');
+};
+
+export const getMySupported = () => {
+  return apiClient.get<MySupported>('/my/supported/');
+};
+
+export const getMyCreations = () => {
+  return apiClient.get<MyCreations>('/my/creations/');
+};
+
+export const getMyParticipations = () => {
+  return apiClient.get<MyParticipations>('/my/participations/');
+};
+export const getMyProfile = () => {
+  return apiClient.get<User>('/my/profile/');
+};
+
+export const updateMyProfile = (payload: UserProfileUpdatePayload) => {
+  return apiClient.post<User>('/auth/profile', payload);
+};
+export const createCourse = (courseData: FormData) => {
+  return apiClient.post<Course>('/creator/courses/', courseData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const createGalleryItem = (itemData: FormData) => {
+  return apiClient.post<GalleryItem>('/creator/gallery/', itemData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const createCommunity = (communityData: FormData) => {
+  return apiClient.post<Community>('/creator/communities/', communityData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
 };

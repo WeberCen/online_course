@@ -12,6 +12,15 @@ import CreatePostView from '../views/CreatePostView.vue'
 import MessageInboxView from '../views/MessageInboxView.vue';
 import MessageThreadDetailView from '../views/MessageThreadDetailView.vue'
 import CreateMessageThreadView from '../views/CreateMessageThreadView.vue'
+import PersonalCenterLayout from '../views/PersonalCenterLayout.vue';
+import MyCollectionsView from '../views/MyCollectionsView.vue';
+import MySupportedView from '../views/MySupportedView.vue';
+import MyCreationsView from '../views/MyCreationsView.vue';
+import MyParticipationsView from '../views/MyParticipationsView.vue'; 
+import MyProfileView from '../views/MyProfileView.vue';
+import CreateCourseView from '../views/CreateCourseView.vue'
+import CreateGalleryItemView from '../views/CreateGalleryItemView.vue'
+import CreateCommunityView from '../views/CreateCommunityView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -59,25 +68,58 @@ const router = createRouter({
       path: '/communities/:communityId/posts/:postId',
       name: 'community-post-detail',
       component: CommunityDetailView
-    }
-    ,
-    {
-      path: '/messages',
-      name: 'message-inbox',
-      component: MessageInboxView
     },
+    
     {
-      path: '/messages/:threadId',
-      name: 'message-thread-detail',
-      component: MessageThreadDetailView
-    },
-    {
-      path: '/messages/new',
-      name: 'create-message-thread',
-      component: CreateMessageThreadView
+      path: '/my',
+      component: PersonalCenterLayout,
+      children: [
+        { path: '', redirect: { name: 'my-collections' } }, // 默认显示我的收藏
+        {
+          path: 'collections',
+          name: 'my-collections',
+          component: MyCollectionsView
+        },
+        {
+          path: 'supported',
+          name: 'my-supported',
+          component: MySupportedView
+        },
+        {
+          path: 'creations',
+          name: 'my-creations',
+          component: MyCreationsView
+        },
+        { path: 'creations/new-course', name: 'create-course', component: CreateCourseView },
+        { path: 'creations/new-gallery-item', name: 'create-gallery-item', component: CreateGalleryItemView },
+        { path: 'creations/new-community', name: 'create-community', component: CreateCommunityView },
+        {
+          path: 'participations',
+          name: 'my-participations',
+          component: MyParticipationsView
+        },
+        {
+          path: 'profile',
+          name: 'my-profile',
+          component: MyProfileView
+        },
+        {
+          path: 'message',
+          name: 'message-inbox',
+          component: MessageInboxView
+        },
+        {
+          path: '/messages/:threadId',
+          name: 'message-thread-detail',
+          component: MessageThreadDetailView
+        },
+        {
+          path: '/messages/new',
+          name: 'create-message-thread',
+          component: CreateMessageThreadView
+        },
+      ]
     }
-
-
   ]
 })
 

@@ -3,8 +3,14 @@
     <form @submit.prevent="sendMessage">
       <h1>发送新消息</h1>
       <div class="form-group">
-        <label for="recipient">收件人 (管理员ID):</label>
-        <input id="recipient" type="number" v-model.number="message.recipient_id" required />
+        <label for="recipient">收件人:</label>
+        <input id="recipient" type="text" v-model="recipientSearch" @input="handleSearch" 
+          placeholder="输入用户名或昵称进行搜索" required />
+        <ul v-if="searchResults.length > 0" class="search-results">
+          <li v-for="user in searchResults" :key="user.id" @click="selectRecipient(user)">
+            {{ user.nickname || user.username }}
+          </li>
+        </ul>
       </div>
       <div class="form-group">
         <label for="subject">主题:</label>
@@ -23,27 +29,69 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { createMessageThread } from '@/services/apiService';
+import { createMessageThread,searchUsers } from '@/services/apiService';
 import { isAxiosError } from 'axios';
+import type { Author } from '@/types';
+
+
+
 
 const router = useRouter();
-const message = reactive({ recipient_id: 1, subject: '', content: '' });
+const message = reactive({ subject: '', content: '' });
+const selectedRecipient = ref<Author | null>(null); 
+const searchResults = ref<Author[]>([]);
+const recipientSearch = ref('');
 const isSending = ref(false);
 const error = ref<string | null>(null);
+let searchTimeout: number | undefined;
+
+const handleSearch = () => {
+  clearTimeout(searchTimeout);
+  searchResults.value = []; 
+  selectedRecipient.value = null; 
+  
+  if (recipientSearch.value.trim().length > 1) {
+    searchTimeout = window.setTimeout(async () => {
+      try {
+        const response = await searchUsers(recipientSearch.value);
+        searchResults.value = response.data;
+        
+      } catch (err) {
+        console.error("用户搜索失败:", err);
+      }
+    }, 300); 
+  }
+};
+
+// 用户从结果列表中选择一个
+const selectRecipient = (user: Author) => {
+  selectedRecipient.value = user;
+  recipientSearch.value = user.nickname || user.username; 
+  searchResults.value = []; 
+};
 
 const sendMessage = async () => {
+  if (!selectedRecipient.value) {
+    alert('请从搜索结果中选择一个有效的收件人。');
+    return;
+  }
   isSending.value = true;
   error.value = null;
   try {
-    await createMessageThread(message);
+    const payload = { 
+      ...message, 
+      recipient_id: selectedRecipient.value.id 
+    };
+    await createMessageThread(payload);
     alert('发送成功！');
-    router.push({ name: 'inbox' });
-  } catch (err) {
+    router.push({ name: 'message-inbox' });
+  } catch (err: unknown) {
     console.error("发送失败:", err);
     if (isAxiosError(err) && err.response?.data) {
-      error.value = (err.response.data as Record<string, string>).detail || '发送失败，请检查您的输入。';
+        const errorData = err.response.data as { detail?: string, error?: string };
+        error.value = errorData.detail || errorData.error || '发送失败，请检查您的输入。';
     } else {
-      error.value = '发送失败，请稍后再试。';
+        error.value = '发送失败，请稍后再试。';
     }
   } finally {
     isSending.value = false;

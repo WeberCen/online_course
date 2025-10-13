@@ -1,22 +1,25 @@
 # backend/api/urls.py
 from django.urls import path
-from .views import (UserRegisterView,UserLoginView,UserProfileView,AvatarUpdateView,
+from .views import (UserRegisterView,UserSearchView,UserLoginView,UserProfileView,AvatarUpdateView,
 PasswordResetRequestView,PasswordResetConfirmView,
 ChangePhoneInitiateView, ChangePhoneVerifyNewView, ChangePhoneCommitView,
 ChangeEmailInitiateView, ChangeEmailVerifyNewView, ChangeEmailCommitView,
 CertificationSubmitView,EditorImageView,
-CourseListView, CourseDetailView,
+CourseListView, CourseDetailView,CourseCreateView,
 CourseCollectionView,CourseSubscriptionView,CourseProgressView,ExerciseSubmissionView,
-GalleryListView,GalleryDetailView,GalleryCollectionView,
-CommunityListView,CommunityPostDetailView,CommunityPostListCreateView,CommunityReplyCreateView,CommunityPostDestroyView,CommunityPostLikeView,
-MessageThreadListCreateView,MessageThreadRetrieveDestroyView)
+GalleryListView,GalleryDetailView,GalleryCollectionView,GalleryItemCreateView,
+CommunityCreateView,CommunityListView,CommunityPostDetailView,
+CommunityPostListCreateView,CommunityReplyCreateView,
+CommunityPostDestroyView,CommunityPostLikeView,
+MessageThreadListCreateView,MessageThreadRetrieveDestroyView,
+MyCollectionsView,MySupportedView,MyCreationsView,MyParticipationsView)
 
 
 urlpatterns = [
     path('auth/register/', UserRegisterView.as_view(), name='auth_register'),
     path('auth/login/', UserLoginView.as_view(), name='auth_login'),
-    path('my/profile/', UserProfileView.as_view(), name='my_profile'),
     path('auth/profile/avatar/', AvatarUpdateView.as_view(), name='auth_profile_avatar'),
+    path('auth/profile', UserProfileView.as_view(), name='auth_profile_update'),
     path('auth/forgot-password/send-code/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('auth/reset-password/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     path('auth/change-phone/initiate-verification/', ChangePhoneInitiateView.as_view(), name='change_phone_initiate'),
@@ -49,5 +52,13 @@ urlpatterns = [
          CommunityReplyCreateView.as_view(), name='post-reply-create'),
     path('my/messages/', MessageThreadListCreateView.as_view(), name='my-messages-list-create'),
     path('my/messages/<int:pk>/', MessageThreadRetrieveDestroyView.as_view(), name='my-messages-detail-destroy'),
-
+    path('users/search/', UserSearchView.as_view(), name='user-search'),
+    path('my/collections/', MyCollectionsView.as_view(), name='my-collections'),
+    path('my/supported/', MySupportedView.as_view(), name='my-supported'),
+    path('my/creations/', MyCreationsView.as_view(), name='my-creations'),
+    path('my/participations/', MyParticipationsView.as_view(), name='my-participations'),
+    path('my/profile/', UserProfileView.as_view(), name='my_profile'),
+    path('creator/communities/', CommunityCreateView.as_view(), name='community-create'),
+    path('creator/courses/', CourseCreateView.as_view(), name='course-create'),
+    path('creator/gallery/', GalleryItemCreateView.as_view(), name='gallery-create'),
     ]

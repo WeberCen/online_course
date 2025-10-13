@@ -139,7 +139,7 @@ class Course(models.Model):
     title = models.CharField(max_length=200, verbose_name="课程标题")
     #description = models.TextField(verbose_name="课程描述")
     description = BleachField(verbose_name="课程描述") 
-    coverImage = models.URLField(max_length=500, blank=True, null=True, verbose_name="封面图片URL")
+    coverImage = models.ImageField(upload_to='gallery_covers/', blank=True, null=True, verbose_name="封面图片")
     pricePoints = models.PositiveIntegerField(default=0, verbose_name="所需积分")
     is_vip_free = models.BooleanField(default=False, verbose_name="VIP免费")
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses_authored', verbose_name="作者")

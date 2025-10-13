@@ -4,7 +4,9 @@ export interface Author {
   nickname?: string;
   avatarUrl?: string | null;
 }
-
+// ===============================================
+// =======          课程模块类型          =======
+// ===============================================
 export interface Chapter {
   id: number;
   title: string;
@@ -17,12 +19,13 @@ export interface Course {
   id: number;
   title: string;
   description: string;
-  coverImage?: string | null;
+  coverImage?: string | File | null;
   author: Author;
   tags: string[];
   chapterCount: number;
   status: string;
   pricePoints: number;
+  is_vip_free: boolean;
 }
 
 export interface CourseDetail extends Course {
@@ -55,17 +58,20 @@ export interface SubmissionResult {
   isPassed: boolean;
   newProgress: Progress;
 }
-
+// ===============================================
+// =======          画廊模块类型          =======
+// ===============================================
 export interface GalleryItem {
   id: number;
   title: string;
   description: string;
-  coverImage: string | null;
+  coverImage?: string | File | null;
   author: Author;
   tags: string[];
   requiredPoints: number;
   rating: number;
   version: string;
+  is_vip_free: boolean;
 }
 
 export interface GalleryItemDetail extends GalleryItem {
@@ -73,8 +79,9 @@ export interface GalleryItemDetail extends GalleryItem {
   is_downloaded: boolean;
   workFile: string;
 }
-
-
+// ===============================================
+// =======          社群模块类型          =======
+// ===============================================
 
 export interface Community {
   id: number;
@@ -82,7 +89,7 @@ export interface Community {
   description: string;
   founder: Author;
   post_count: number;
-  coverImage?: string | null;
+  coverImage?: string | File | null;
   tags: string[];
 }
 
@@ -93,6 +100,7 @@ export interface CommunityPostListItem {
   rewardPoints: number;
   created_at: string;
   reply_count: number;
+  community: number;
 }
 
 export interface CommunityReply {
@@ -116,6 +124,9 @@ export interface CommunityPost {
   replies: CommunityReply[];
   likes: number[];
 } 
+// ===============================================
+// =======         站内信模块类型         =======
+// ===============================================
 export interface Message {
   id: number;
   sender: Author;
@@ -123,7 +134,7 @@ export interface Message {
   sent_at: string;
 }
 
-// 用于会话列表页的摘要信息
+
 export interface MessageThread {
   id: number;
   subject: string;
@@ -132,7 +143,7 @@ export interface MessageThread {
   created_at: string;
 }
 
-// 用于会话详情页的完整信息
+
 export interface MessageThreadDetail {
   id: number;
   subject: string;
@@ -141,3 +152,43 @@ export interface MessageThreadDetail {
   created_at: string;
   messages: Message[];
 }
+
+// ===============================================
+// =======         个人中心模块类型         =======
+// ===============================================
+
+export interface MyCollections {
+  courses: Course[];
+  gallery_items: GalleryItem[];
+}
+
+export interface MySupported {
+  courses: Course[];
+  gallery_items: GalleryItem[]; 
+}
+
+export interface MyCreations {
+  courses: Course[];
+  gallery_items: GalleryItem[];
+  founded_communities: Community[]; 
+}
+
+export interface MyParticipations {
+  posts: CommunityPostListItem[];
+}
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  phone: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+  role: string;
+  currentPoints: number;
+  ageGroup: string | null;
+  gender: string | null;
+  interests: string[];
+  accountStatus: string;
+  pointsStatus: string;
+}
+export type UserProfileUpdatePayload = Partial<Pick<User, 'nickname' | 'ageGroup' | 'gender' | 'interests'>>;

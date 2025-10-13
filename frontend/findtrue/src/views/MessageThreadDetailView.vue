@@ -27,7 +27,7 @@ const thread = ref<MessageThreadDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 onMounted(async () => {
-  const threadId = route.params.id as string;
+  const threadId = route.params.threadId as string;
   try {
     const response = await getMessageThreadDetail(threadId);
     thread.value = response.data;
