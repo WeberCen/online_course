@@ -8,50 +8,69 @@ from django_bleach.models import BleachField
 
 class User(AbstractUser):
     # 用户角色
-    ROLE_CHOICES = [
-        ('Student', 'Student'),
-        ('Student-Artist', 'Student-Artist'),
-        ('Admin', 'Admin'),
-    ]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='Student')
+    class UserRole(models.TextChoices): 
+        STUDENT = 'student', ('学生')
+        ARTIST = 'artist', ('创作者')
+        ADMIN = 'admin', ('管理员')
+    role = models.CharField(max_length=20, choices=UserRole.choices, default=UserRole.STUDENT, verbose_name="用户角色")
 
     # 账户状态
-    ACCOUNT_STATUS_CHOICES = [
-        ('active', 'active'),
-        ('suspended', 'suspended'),
-        ('frozen', 'frozen')
-    ]
-    accountStatus = models.CharField(max_length=20, choices=ACCOUNT_STATUS_CHOICES, default='active')
+    class AccountStatus(models.TextChoices):
+        ACTIVE = 'active', ('活跃')
+        SUSPENDED = 'suspended', ('已暂停')
+        FROZEN = 'frozen', ('已冻结')
 
+    accountStatus = models.CharField(max_length=20, choices=AccountStatus.choices, default=AccountStatus.ACTIVE, verbose_name="账户状态")
+    
     # 积分状态
-    POINTS_STATUS_CHOICES = [
-        ('active', 'active'),
-        ('frozen', 'frozen'),
-    ]
-    pointsStatus = models.CharField(max_length=20, choices=POINTS_STATUS_CHOICES, default='active')
+    class PointsStatus(models.TextChoices):
+        ACTIVE = 'active', ('活跃')
+        FROZEN = 'frozen', ('已冻结')
+
+    pointsStatus = models.CharField(max_length=20, choices=PointsStatus.choices, default=PointsStatus.ACTIVE, verbose_name="积分状态")
 
     # 额外信息
-    nickname = models.CharField(max_length=100, blank=True, null=True)
+    nickname = models.CharField(max_length=100, blank=True, null=True,verbose_name="昵称")
     avatarUrl = models.ImageField(upload_to='avatars/', blank=True, null=True,verbose_name="头像")
-    currentPoints = models.IntegerField(default=0)
-    
+    currentPoints = models.PositiveIntegerField(default=0, verbose_name="当前总积分") 
+
     # 注册时填写的分类信息
-    ageGroup = models.CharField(max_length=20, blank=True, null=True)
-    gender = models.CharField(max_length=20, blank=True, null=True)
-    interests = models.JSONField(default=list, blank=True, null=True)
+    ageGroup = models.CharField(max_length=20, blank=True, null=True, verbose_name="年龄组")
+    gender = models.CharField(max_length=20, blank=True, null=True, verbose_name="性别")
+    interests = models.JSONField(default=list, blank=True, null=True, verbose_name="兴趣爱好")
+    is_deleted = models.BooleanField(default=False, verbose_name="是否已软删除")
+    deleted_at = models.DateTimeField(null=True, blank=True, verbose_name="软删除时间")
     
     # 移除 AbstractUser 中我们不直接使用的字段
-    first_name = None
-    last_name = None
-    
+    class Meta(AbstractUser.Meta):
+        indexes = [
+        models.Index(fields=['role', 'accountStatus']), 
+        models.Index(fields=['currentPoints']), 
+        models.Index(fields=['is_deleted']), 
+    ]
+    verbose_name = "用户"
+    verbose_name_plural = "用户"
     # 使用 email和phone 作为登录的主要凭证
     email = models.EmailField(unique=True,verbose_name="邮箱")
     phone = models.CharField(max_length=15, unique=True, verbose_name="手机号")
     
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username','phone'] # username 仍然需要，但 email 是登录凭证
-    
+    REQUIRED_FIELDS = ['username','phone']
+    #info
+    unread_message_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="未读站内信总数",
+        help_text="用于快速展示未读消息提示的缓存计数。"
+    ) 
+    is_beta_tester = models.BooleanField(default=False, verbose_name="是否为测试用户")
+    wechat_openid = models.CharField(max_length=100, blank=True, null=True, verbose_name="微信OpenID")
+    bio = BleachField(max_length=120,default="这是个神秘的人",blank=True, null=True, verbose_name="用户介绍",)
 
+    #活跃度的情况
+    last_activity_at = models.DateTimeField(null=True, blank=True, verbose_name="最后活动时间")
+    posts_authored_count = models.PositiveIntegerField(default=0,verbose_name="创作的帖子总数",)  
+    items_authored_count = models.PositiveIntegerField(default=0,verbose_name="创作的作品总数",)  
+    course_authored_count = models.PositiveIntegerField(default=0,verbose_name="创作的课程总数",)  
     #课程进度字段
     completed_chapters = models.ManyToManyField(
         'Chapter', through='UserChapterCompletion',
@@ -67,6 +86,7 @@ class User(AbstractUser):
         return False
     def __str__(self):
         return self.email
+    
     
 class CertificationRequest(models.Model):
     """创作者资质认证申请模型"""
@@ -135,9 +155,9 @@ class Course(models.Model):
         PENDING_REVIEW = 'pending_review', '待审核'
         PUBLISHED = 'published', '已发布'
         REJECTED = 'rejected', '已驳回'
+        ARCHIVED = 'archived', '已归档'
 
     title = models.CharField(max_length=200, verbose_name="课程标题")
-    #description = models.TextField(verbose_name="课程描述")
     description = BleachField(verbose_name="课程描述") 
     coverImage = models.ImageField(upload_to='gallery_covers/', blank=True, null=True, verbose_name="封面图片")
     pricePoints = models.PositiveIntegerField(default=0, verbose_name="所需积分")
@@ -145,7 +165,7 @@ class Course(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses_authored', verbose_name="作者")
     tags = models.ManyToManyField(
         Tag, 
-        limit_choices_to={'scope': Tag.TagScope.COURSE}, # 关键点在这里！
+        limit_choices_to={'scope': Tag.TagScope.COURSE}, 
         related_name='courses', 
         blank=True, 
         verbose_name="课程标签"
@@ -153,9 +173,8 @@ class Course(models.Model):
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.DRAFT, verbose_name="课程状态")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    subscribers = models.ManyToManyField(User, related_name='subscribed_courses', blank=True, through='Subscription')
-    collectors = models.ManyToManyField(User, related_name='collected_courses', blank=True, through='Collection')
+    subscribers = models.ManyToManyField(User, related_name='subscribed_courses', blank=True, through='Subscription',verbose_name="订阅者")
+    collectors = models.ManyToManyField(User, related_name='collected_courses', blank=True, through='Collection',verbose_name="收藏者")
    
     def __str__(self):
         return self.title
@@ -169,7 +188,7 @@ class Chapter(models.Model):
     title = models.CharField(max_length=200, verbose_name="章节标题")
     order = models.PositiveIntegerField(default=0, verbose_name="章节顺序")
     videoUrl = models.URLField(max_length=500, blank=True, null=True, verbose_name="视频链接")
-   
+
     class Meta:
         verbose_name = "章节"
         verbose_name_plural = verbose_name
@@ -182,13 +201,30 @@ class Option(models.Model):
     """选择题选项模型"""
     exercise = models.ForeignKey('Exercise', on_delete=models.CASCADE, related_name='options')
     text = models.CharField(max_length=500, verbose_name="选项内容")
-    is_correct = models.BooleanField(default=False, verbose_name="是否为正确答案") # 新增字段
+    is_correct = models.BooleanField(default=False, verbose_name="是否为正确答案") 
 
     def __str__(self):
         return self.text
     class Meta:
         verbose_name = "选项"
         verbose_name_plural = verbose_name
+
+class fill_in_blank(models.Model):
+    """填空题模型"""
+    exercise = models.ForeignKey('Exercise', on_delete=models.CASCADE, related_name='fill_in_blanks')
+    index_number = models.PositiveIntegerField(default=1,verbose_name="填空题答案序号",help_text= "如果题目有多个填空位，标识这是第几个空")
+    correct_answer = models.CharField(max_length=500, verbose_name="正确答案")
+    is_correct = models.BooleanField(default=False, verbose_name="是否为正确答案")
+    case_sensitive = models.BooleanField(
+        default=False, 
+        verbose_name="答案是否区分大小写"
+    )
+    class Meta:
+        verbose_name = "填空题"
+        verbose_name_plural = "填空题答案"
+        ordering = ['exercise','index_number']
+    def __str__(self):
+        return f"答案 {self.index_number} for {self.exercise.id}: {self.correct_answer}"
 
 
 class Exercise(models.Model):
@@ -199,26 +235,50 @@ class Exercise(models.Model):
 
     chapter = models.ForeignKey(Chapter, on_delete=models.CASCADE, related_name='exercises', verbose_name="所属章节")
     type = models.CharField(max_length=20, choices=ExerciseTypeChoices.choices, verbose_name="题目类型")
-    #prompt = models.TextField(verbose_name="题干")
     prompt = BleachField(verbose_name="题干")
-    #explanation = models.TextField(blank=True, null=True, verbose_name="答案解析")
     explanation = BleachField(blank=True, null=True, verbose_name="答案解析")
     image_upload = models.ImageField(upload_to='exercises/', blank=True, null=True, verbose_name="上传图片")
     image_url = models.URLField(blank=True, null=True, verbose_name="图片链接")
     
-    # 恢复 answer 字段，专门给填空题使用
-    answer = models.JSONField(
-        blank=True, 
-        null=True, 
-        verbose_name="填空题答案",
-        help_text="【仅供填空题使用】请在此处输入答案数组, 例如: [\"答案A\", \"答案B\"]"
-    )
     class Meta:
         verbose_name = "练习"
         verbose_name_plural = verbose_name
     
     def __str__(self):
         return f"{self.get_type_display()} for {self.chapter.title}: {self.prompt[:30]}..."
+
+class UserExerciseSubmission(models.Model):
+    """用户练习题提交记录模型"""
+    
+    user = models.ForeignKey(User,
+        on_delete=models.CASCADE,
+        related_name='exercise_submissions',
+        verbose_name="用户"
+    )
+    exercise = models.ForeignKey(
+        Exercise,
+        on_delete=models.CASCADE,
+        related_name='submissions',
+        verbose_name="练习题"
+    )
+    submitted_answer = models.JSONField(
+        verbose_name="用户提交的答案"
+    )
+    is_correct = models.BooleanField(
+        default=False, 
+        verbose_name="是否正确"
+    )
+    
+    submitted_at = models.DateTimeField(
+        auto_now_add=True, 
+        verbose_name="提交时间"
+    )
+
+    class Meta:
+        verbose_name = "用户提交"
+        verbose_name_plural = "用户提交"
+    def __str__(self):
+        return f"{self.user.username} - {self.exercise.id} - Correct: {self.is_correct}"
 
 class Subscription(models.Model):
     """课程订阅关系模型"""
@@ -272,46 +332,59 @@ class GalleryItem(models.Model):
         ARCHIVED = 'archived', '已归档'
 
     title = models.CharField(max_length=200, verbose_name="作品标题")
-    #description = models.TextField(verbose_name="作品描述")
     description = BleachField(verbose_name="作品描述") 
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='gallery_items_authored', verbose_name="作者")
-    
     coverImage = models.ImageField(upload_to='gallery_covers/', blank=True, null=True, verbose_name="封面图片")
     workFile = models.FileField(upload_to='gallery_files/', verbose_name="作品文件(压缩包等)") # 用于存储实际的作品文件
     is_vip_free = models.BooleanField(default=False, verbose_name="VIP免费")
     tags = models.ManyToManyField(
         Tag, 
-        limit_choices_to={'scope': Tag.TagScope.GALLERY}, # 关键点在这里！
+        limit_choices_to={'scope': Tag.TagScope.GALLERY},
         related_name='gallery_items', 
         blank=True, 
         verbose_name="画廊标签"
     )
     status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.DRAFT, verbose_name="作品状态")
-    
     requiredPoints = models.PositiveIntegerField(default=0, verbose_name="所需积分")
-    
-    # 前置作品，指向自身，形成依赖关系
     prerequisiteWork = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="往期版本")
-
-    # 用于展示的只读字段
     version = models.CharField(max_length=20, blank=True, null=True, verbose_name="版本号")
     rating = models.FloatField(default=0.0, verbose_name="平均评分")
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    collectors = models.ManyToManyField(User, related_name='collected_gallery_items', blank=True, through='GalleryCollection')
+    collectors = models.ManyToManyField(User, related_name='collected_gallery_items', blank=True, through='GalleryCollection',verbose_name="收藏者")
+    downloaders = models.ManyToManyField(User, related_name='downloaded_gallery_items', blank=True, through='GalleryDownloadRecord',verbose_name="下载者")
+    estimated_download_time = models.FloatField(default=0.0, verbose_name="估计下载时间(分钟)")
     class Meta:
         verbose_name = "画廊作品"
         verbose_name_plural = verbose_name
     
     def __str__(self):
         return self.title
+    def save(self, *args, **kwargs):
+        DOWNLOAD_RATE_BYTES_PER_SECOND = 3 * 1024 * 1024  # 3 MB/s
+        
+        # 确保 workFile 字段有文件存在
+        if self.workFile:
+            try:
+                self.file_size_bytes = self.workFile.size
+            except:
+                self.file_size_bytes = 0
+                
+            # 2. 计算预计下载时间
+            if self.file_size_bytes > 0 and DOWNLOAD_RATE_BYTES_PER_SECOND > 0:
+                self.estimated_download_time = self.file_size_bytes / DOWNLOAD_RATE_BYTES_PER_SECOND
+            else:
+                self.estimated_download_time = 0.0
+        else:
+            self.file_size_bytes = 0
+            self.estimated_download_time = 0.0
+
+        super().save(*args, **kwargs)
 
 class GalleryCollection(models.Model):
     """画廊作品收藏关系模型"""
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE,verbose_name="收藏用户")
+    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE,verbose_name="收藏作品")
     collected_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -321,23 +394,24 @@ class GalleryCollection(models.Model):
 
 class GalleryDownloadRecord(models.Model):
     """画廊作品下载记录模型"""
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE)
-    downloaded_at = models.DateTimeField(auto_now_add=True)
-    points_spent = models.PositiveIntegerField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE,verbose_name="下载用户")
+    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE,verbose_name="下载作品")
+    downloaded_at = models.DateTimeField(auto_now_add=True, verbose_name="下载时间")
+    points_spent = models.PositiveIntegerField(verbose_name="消耗积分")
+
     class Meta:
         verbose_name = "画廊作品下载记录"
         verbose_name_plural = verbose_name
     
     def __str__(self):
-        return f"{self.user.username} downloaded {self.gallery_item.title}"
+        return f"{self.user.username} downloaded {self.item.title} at {self.downloaded_at.strftime('%Y-%m-%d %H:%M')}"
 
 class GalleryItemRating(models.Model):
     """画廊作品评分记录模型"""
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE)
-    rating = models.PositiveSmallIntegerField() # 1-5
-    rated_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE,verbose_name="评分用户")
+    gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE,verbose_name="评分对象")
+    rating = models.PositiveSmallIntegerField(verbose_name="评分") # 1-5
+    rated_at = models.DateTimeField(auto_now_add=True, verbose_name="评分时间")
 
     class Meta:
         verbose_name = "画廊作品评分记录"
@@ -350,16 +424,24 @@ class GalleryItemRating(models.Model):
 # ===============================================
 
 class Community(models.Model):
+    class StatusChoices(models.TextChoices):
+        DRAFT = 'draft', '草稿'
+        PENDING_REVIEW = 'pending_review', '待审核'
+        PUBLISHED = 'published', '已发布'
+        REJECTED = 'rejected', '已驳回'
+        ARCHIVED = 'archived', '已归档'
     """社群（板块）模型"""
     name = models.CharField(max_length=100, unique=True, verbose_name="社群名称")
     description = BleachField(blank=True, null=True, verbose_name="社群描述")
     founder = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='founded_communities', verbose_name="创始人")
     assistants = models.ManyToManyField(User, related_name='assisted_communities', blank=True, verbose_name="创始人助手")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
     members = models.ManyToManyField(User, related_name='joined_communities', blank=True, verbose_name="社群成员")
     coverImage = models.ImageField(upload_to='community_covers/', blank=True, null=True, verbose_name="封面图片")
     related_course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True, blank=True, related_name='community_access', verbose_name="关联课程")
     related_gallery_item = models.ForeignKey(GalleryItem, on_delete=models.SET_NULL, null=True, blank=True, related_name='community_access', verbose_name="关联画廊作品")
+    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.DRAFT, verbose_name="社群状态")
     tags = models.ManyToManyField(
         Tag, 
         limit_choices_to={'scope': Tag.TagScope.COMMUNITY}, 
@@ -367,6 +449,11 @@ class Community(models.Model):
         blank=True, 
         verbose_name="社群标签"
     )
+    post_count = models.PositiveIntegerField(
+        default=0, 
+        verbose_name="帖子总数",#记得要写一个更新任务，一周一次
+    )
+
     def __str__(self):
         return self.name
     
@@ -386,17 +473,13 @@ class CommunityPost(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='community_posts', verbose_name="发帖人")
     likes = models.ManyToManyField(User, related_name='liked_posts', blank=True, verbose_name="点赞用户")
     title = models.CharField(max_length=200, verbose_name="帖子标题")
-    #content = models.TextField(verbose_name="帖子内容")
     content = BleachField(verbose_name="帖子内容")
-    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PUBLISHED, verbose_name="帖子状态")
+    status = models.CharField(max_length=20, choices=StatusChoices.choices, default=StatusChoices.PENDING_REVIEW, verbose_name="帖子状态")
     rewardPoints = models.PositiveIntegerField(default=0, verbose_name="悬赏积分")
-    
-    # 关联到被采纳的最佳答案
     best_answer = models.OneToOneField('CommunityReply', on_delete=models.SET_NULL, null=True, blank=True, related_name='best_for_post', verbose_name="最佳答案")
-    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="发布时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
-
+    
     def __str__(self):
         return self.title
 
@@ -408,7 +491,6 @@ class CommunityReply(models.Model):
     """社群回帖模型"""
     post = models.ForeignKey(CommunityPost, on_delete=models.CASCADE, related_name='replies', verbose_name="所属帖子")
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='community_replies', verbose_name="回帖人")
-    #content = models.TextField(verbose_name="回复内容")
     content = BleachField(verbose_name="回复内容")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="回复时间")
     likes = models.ManyToManyField(User, related_name='liked_replies', blank=True, verbose_name="点赞用户")
@@ -435,7 +517,7 @@ class PointsTransaction(models.Model):
         
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='points_transactions', verbose_name="用户")
-    amount = models.IntegerField(verbose_name="变动数额") # 正数表示增加，负数表示扣除
+    amount = models.IntegerField(verbose_name="变动数额") 
     description = models.CharField(max_length=255, verbose_name="变动原因")
     transaction_type = models.CharField(max_length=20, choices=TransactionType.choices, verbose_name="交易类型")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="发生时间")
@@ -479,8 +561,8 @@ class PointsTransaction(models.Model):
 
 class VipPlan(models.Model):
     """VIP 购买套餐模型"""
-    name = models.CharField(max_length=100, verbose_name="套餐名称") # 例如 "月度会员"
-    duration_days = models.PositiveIntegerField(verbose_name="有效天数") # 例如 30
+    name = models.CharField(max_length=100, verbose_name="套餐名称") 
+    duration_days = models.PositiveIntegerField(verbose_name="有效天数") 
     price_points = models.PositiveIntegerField(verbose_name="所需积分")
 
     def __str__(self):
@@ -494,10 +576,8 @@ class VipPlan(models.Model):
 # =======        审核中心 代理模型        =======
 # ===============================================
 
-# --- 创建一个自定义管理器，用于筛选待审核内容 ---
 class PendingReviewManager(models.Manager):
     def get_queryset(self):
-        # 根据模型的不同，使用不同的状态字段进行筛选
         if self.model.__name__ == 'PendingCertificationRequest':
             return super().get_queryset().filter(status='pending')
         else:
@@ -559,6 +639,7 @@ class MessageThread(models.Model):
     content_type = models.ForeignKey(ContentType, on_delete=models.SET_NULL, null=True, blank=True)
     object_id = models.PositiveIntegerField(null=True, blank=True)
     content_object = GenericForeignKey('content_type', 'object_id')
+    last_message_at = models.DateTimeField(default = timezone.now,null=True, blank=True, verbose_name="最后一条消息时间")
 
     def __str__(self):
         return self.subject
@@ -566,7 +647,7 @@ class MessageThread(models.Model):
     class Meta:
         verbose_name = "站内信会话"
         verbose_name_plural = verbose_name
-        ordering = ['-created_at']
+        ordering = ['-created_at', '-last_message_at']
 
 class Message(models.Model):
     """
@@ -575,18 +656,16 @@ class Message(models.Model):
     """
     thread = models.ForeignKey(MessageThread, on_delete=models.CASCADE, related_name='messages', verbose_name="所属会话")
     sender = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='sent_messages', verbose_name="发信人")
-    recipient = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='received_direct_messages', verbose_name="收件人")
     content = BleachField(verbose_name="内容")
-    cc_recipient = models.ForeignKey(
-        User, 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
-        related_name='cc_messages', 
-        verbose_name="抄送人"
-    )
     sent_at = models.DateTimeField(auto_now_add=True, verbose_name="发送时间")
-
+    recipient = models.ForeignKey( User,on_delete=models.SET_NULL, null=True, related_name='received_direct_messages', verbose_name="收件人")
+    is_recipient_read = models.BooleanField(default=False,verbose_name="收件人是否已读")
+    cc_recipient = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,  blank=True,  related_name='cc_messages',  verbose_name="抄送人")
+    is_cc_read = models.BooleanField(default=False,verbose_name="抄送人是否已读")
+    is_sender_deleted = models.BooleanField(default=False,verbose_name="发信人是否已删除")
+    is_recipient_deleted = models.BooleanField(default=False,verbose_name="收件人是否已删除")
+    is_cc_deleted = models.BooleanField(default=False,verbose_name="抄送人是否已删除")
+    
     def __str__(self):
         return f"Reply from {self.sender} to {self.recipient} in thread '{self.thread.subject}'"
 

@@ -11,7 +11,8 @@ from django.utils.html import format_html
 from reversion.admin import VersionAdmin 
 from .models import (User, Tag, Course, Chapter, Exercise,
                       CertificationRequest, Subscription, 
-                      Collection,UserChapterCompletion,Option,
+                      Collection,UserChapterCompletion,
+                      Option,fill_in_blank,UserExerciseSubmission,
                       GalleryItem, GalleryCollection, 
                       GalleryDownloadRecord, GalleryItemRating,
                       Community,CommunityPost,CommunityReply,PointsTransaction,
@@ -40,10 +41,40 @@ class RichTextAdminMixin:
 class OptionInline(admin.TabularInline):
     """选项的内联编辑器"""
     model = Option
-    # 显示 text 和 is_correct 字段
     fields = ('text', 'is_correct')
     extra = 4  # 默认提供4个空的选项输入框
     max_num = 8 # 最多只能添加4个选项
+    verbose_name = "多选题选项"
+    verbose_name_plural = "多选题选项"
+
+class FillInBlankInline(admin.TabularInline):
+    """填空题答案的内联编辑器"""
+    model = fill_in_blank
+    extra = 1
+    fields = ('index_number', 'correct_answer', 'case_sensitive')
+    verbose_name = "填空题答案"
+    verbose_name_plural = "填空题答案"
+
+class UserExerciseSubmissionInline(admin.TabularInline):
+    model = UserExerciseSubmission
+    extra = 0
+    verbose_name_plural = '练习题提交历史'
+    fields = ('submitted_at', 'exercise_link', 'submitted_answer', 'is_correct')
+    readonly_fields = fields # 设为只读
+    ordering = ('-submitted_at',)
+
+    def exercise_link(self, obj):
+        url = reverse('admin:api_exercise_change', args=[obj.exercise.id])
+        return format_html('<a href="{}">{}</a>', url, obj.exercise)
+    exercise_link.short_description = '题目'
+
+    def has_add_permission(self, request, obj=None): return False
+    def has_delete_permission(self, request, obj=None): return False
+    def has_change_permission(self, request, obj=None): return False
+
+    def get_queryset(self, request):
+        # 默认只显示最近的 20 条提交记录，避免页面过长
+        return super().get_queryset(request).order_by('-submitted_at')[:20]
 
 class ChapterInline(admin.TabularInline):
     model = Chapter
@@ -78,6 +109,23 @@ class GalleryDownloadRecordInline(admin.TabularInline):
     autocomplete_fields = ['gallery_item']
     def item_version(self, obj):
         return obj.gallery_item.version
+    
+class GalleryCollectionInline(admin.TabularInline):
+    model = GalleryCollection
+    extra = 0
+    verbose_name_plural = '收藏记录'
+    fields = ('user', 'collected_at')
+    readonly_fields = ('collected_at',)
+    autocomplete_fields = ['user']
+    ordering = ('-collected_at',)
+
+    def has_add_permission(self, request, obj=None): return False
+    def has_delete_permission(self, request, obj=None): return False
+    def has_change_permission(self, request, obj=None): return False
+
+    def get_queryset(self, request):
+        # 默认只显示最近的 20 条收藏记录
+        return super().get_queryset(request).order_by('-collected_at')[:20]
 
 class AuthoredCoursesInline(admin.TabularInline):
     model = Course
@@ -141,31 +189,41 @@ class CommunityReplyInline(admin.TabularInline):
 
 class MessageInline(admin.TabularInline):
     model = Message
-    extra = 1
+    extra = 0
+    verbose_name_plural = "消息记录"
     formfield_overrides = {
         BleachField: {'widget': TinyMCE(attrs={'cols': 80, 'rows': 15})},
     }
-    fields = ('sender', 'recipient', 'content', 'cc_recipient', 'sent_at')
+    fields = ('sender', 'recipient', 'content', 'cc_recipient', 'sent_at', 'is_recipient_read', 'is_cc_read')
     readonly_fields = ('sent_at',)
     autocomplete_fields = ['sender', 'recipient', 'cc_recipient']
+    ordering = ('sent_at',)
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     actions = ['suspend_accounts', 'activate_accounts', 'promote_to_artist']
     # 定义在 user 搜索框中可以搜索的字段
-    list_display = ('username', 'email', 'nickname', 'role','currentPoints', 'is_staff', 'last_login','date_joined')
-    list_filter = ('role','is_staff','accountStatus', 'is_active', 'groups')
+    list_display = ('username', 'email', 'nickname', 'role','accountStatus','currentPoints', 'is_staff','is_vip','is_beta_tester', 'last_activity_at','date_joined')
+    list_filter = ('role','accountStatus','groups')
+    boolean_fields = ['is_vip', 'is_beta_tester','is_staff','is_superuser','is_active']
     search_fields = ['username', 'email', 'phone', 'nickname']
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
-        ('个人信息', {'fields': ('nickname', 'email', 'phone', 'ageGroup', 'gender', 'interests')}),
-        ('平台数据', {'fields': ('role', 'vip_expiration_date', 'currentPoints')}),
+        ('核心信息', {'fields': ('nickname', 'email', 'phone', 'bio')}),
+        ('用户画像', {'fields': ('ageGroup', 'gender', 'interests')}),
+        ('平台数据', {'fields': ('role', 'is_vip', 'vip_expiration_date', 'currentPoints')}),
         ('状态控制', {'fields': ('accountStatus', 'pointsStatus')}),
+        ('内部标识', {'fields': ('is_beta_tester', 'wechat_openid', 'is_deleted', 'deleted_at')}),
         ('关联内容', {'fields': ('posts_link',)}),
         ('权限', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups')}),
-        ('重要日期', {'fields': ('last_login', 'date_joined')}),
+        ('重要日期', {'fields': ('last_login', 'date_joined', 'last_activity_at')}),
+        ('缓存计数', {'fields': ('unread_message_count', 'posts_authored_count', 'items_authored_count', 'course_authored_count')}),
     )
-    readonly_fields = ('last_login', 'date_joined','posts_link')
+    readonly_fields = (
+        'last_login', 'date_joined', 'last_activity_at', 'posts_link', 
+        'unread_message_count', 'posts_authored_count', 'items_authored_count', 
+        'course_authored_count', 'deleted_at'
+    )
 
     inlines = [
         PointsTransactionInline,
@@ -175,7 +233,6 @@ class UserAdmin(BaseUserAdmin):
         AuthoredGalleryItemsInline,
         CertificationRequestInline,
     ]
-    readonly_fields += ('posts_link',)
     def posts_link(self, obj):
         count = obj.community_posts.count()
         url = reverse('admin:api_communitypost_changelist') + f'?author__id__exact={obj.id}'
@@ -183,31 +240,48 @@ class UserAdmin(BaseUserAdmin):
     posts_link.short_description = '发布的帖子'
 
     def suspend_accounts(self, request, queryset):
-        queryset.update(accountStatus='suspended')
+        queryset.update(accountStatus=User.AccountStatus.SUSPENDED)
     suspend_accounts.short_description = "暂停选中用户的账号"
 
     def activate_accounts(self, request, queryset):
-        queryset.update(accountStatus='active')
+        queryset.update(accountStatus=User.AccountStatus.ACTIVE)
     activate_accounts.short_description = "激活选中用户的账号"
 
+    def freeze_accounts(self, request, queryset):
+        queryset.update(accountStatus=User.AccountStatus.FROZEN)
+    freeze_accounts.short_description = "冻结选中用户的账号"
+
     def promote_to_artist(self, request, queryset):
-        queryset.update(role='Student-artist')
+        queryset.update(role=User.UserRole.ARTIST)
     promote_to_artist.short_description = "将选中用户提升为创作者"
 
+    def set_as_beta_tester(self, request, queryset):
+        queryset.update(is_beta_tester=True)
+    set_as_beta_tester.short_description = "设为测试用户"
 
+
+# ===============================================
+# =======       课程后台管理         =======
+# ===============================================
 @admin.register(Course)
 class CourseAdmin(RichTextAdminMixin, VersionAdmin):
     list_display = (
         'id', 'title', 'author', 'status', 'chapter_count', 
-        'subscription_link', 'collection_link', 'completion_rate'
-    )
-    list_filter = ('status', 'author', 'tags')
+        'subscription_link', 'collection_link',
+        'completion_rate','is_vip_free','display_tags_summary')
+    list_filter = ('tags')
+    list_editable = ('status', 'is_vip_free')
     search_fields = ['title', 'description', 'author__username']
+    fieldsets = (
+        ('核心管理', {'fields': ('status', 'is_vip_free','tags')}),
+        ('课程内容 ', {'fields': ('title', 'author', 'description', 'coverImage', 'pricePoints',)}),
+        ('时间戳 ', {'fields': ('created_at', 'updated_at')}),
+    )
     inlines = [ChapterInline]
-    filter_horizontal = ('tags',)
-    is_vip_free: bool = False
-    readonly_fields = ('created_at', 'updated_at') # 将时间戳设为只读
-
+    filter_horizontal = ('tags')
+    readonly_fields = ('title', 'description', 'author', 'pricePoints', 'coverImage','created_at', 'updated_at') 
+    def has_add_permission(self, request, obj=None):
+        return False
     def chapter_count(self, obj):
         return obj.chapters.count()
     chapter_count.short_description = '章节数'
@@ -228,41 +302,53 @@ class CourseAdmin(RichTextAdminMixin, VersionAdmin):
         subscriber_count = obj.subscribers.count()
         if subscriber_count == 0:
             return "0.0%"
-        
-        # 找到所有订阅者
         subscribers = obj.subscribers.all()
-        # 统计每个订阅者在该课程下完成的章节数
         completed_counts = UserChapterCompletion.objects.filter(
             user__in=subscribers, chapter__course=obj
         ).values('user').annotate(completed_count=Count('chapter'))
-
-        # 找到完成了所有章节的用户
         total_chapters = obj.chapters.count()
         if total_chapters == 0:
             return "N/A"
-            
         completer_count = sum(1 for item in completed_counts if item['completed_count'] == total_chapters)
         
         rate = (completer_count / subscriber_count) * 100
         return f"{rate:.2f}%"
     completion_rate.short_description = '完读率'
-
+    def display_tags_summary(self, obj):
+        """返回前三个标签的名称，用逗号分隔"""
+        tags = obj.tags.all() 
+        limit = 3
+        tag_list = [tag.name for tag in tags[:limit]]
+        if len(tags) > limit:
+            tag_summary = ", ".join(tag_list) + "..."
+        else:
+            tag_summary = ", ".join(tag_list)
+            
+        # 优化：如果需要链接到标签过滤页面，可以使用 mark_safe
+        # return mark_safe(f'<a href="/admin/myapp/tag/?q={tag_list[0]}">{tag_summary}</a>')
+        
+        return tag_summary
+    display_tags_summary.short_description = "标签"
 
 @admin.register(Exercise)
 class ExerciseAdmin(RichTextAdminMixin, admin.ModelAdmin):
     list_display = ('id', 'prompt', 'chapter', 'type', 'completion_count','display_custom_id')
-    list_filter = ('type', 'chapter__course', 'type')
+    list_filter = ('type', 'chapter__course',)
     search_fields = ('prompt', 'explanation','type')
-    inlines = [OptionInline]
-    autocomplete_fields = ['chapter'] 
+    inlines = [OptionInline,FillInBlankInline,UserExerciseSubmission]
+    autocomplete_fields = ['chapter']
+    def get_inlines(self, request, obj=None):
+        if obj:
+            if obj.type == 'multiple-choice':
+                return [OptionInline]
+            elif obj.type == 'fill-in-the-blank':
+                return [FillInBlankInline]
+        return [] 
     fieldsets = [
         (None, {'fields': ('chapter', 'type', 'prompt')}),
         ('题目配图 (可选)', {'fields': ('image_upload', 'image_url'), 'classes': ('collapse',)}),
         ('答案与解析', {'fields': ('explanation',)}),
-        ('填空题专用答案', {'fields': ('answer',), 'classes': ('collapse',)}),
     ]
-    inlines = [OptionInline]
-
     def display_custom_id(self, obj):
         try:
             exercise_order = list(obj.chapter.exercises.all()).index(obj) + 1
@@ -270,10 +356,12 @@ class ExerciseAdmin(RichTextAdminMixin, admin.ModelAdmin):
         except (AttributeError, ValueError):
             return "N/A"
     display_custom_id.short_description = "题目ID"
+    def submission_count(self, obj):
+        return obj.submissions.count()
+    submission_count.short_description = '总提交次数'
     def completion_count(self, obj):
         return UserChapterCompletion.objects.filter(chapter=obj.chapter).count()
     completion_count.short_description = '章节完成人数'
-
 
 @admin.register(Chapter)
 class ChapterAdmin(admin.ModelAdmin):
@@ -314,21 +402,41 @@ class TagAdmin(admin.ModelAdmin):
     def usage_count(self, obj):
         return obj.courses.count() + obj.gallery_items.count() + obj.communities.count()
     usage_count.short_description = '引用次数'
-
-#画廊相关模型
+# ===============================================
+# =======       画廊后台管理         =======
+# ===============================================
 @admin.register(GalleryItem)
 class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin): 
-    list_display = ('id', 'title', 'author', 'status', 'version', 'requiredPoints', 'rating', 'download_count', 'collection_count')
-    list_filter = ('status', 'author', 'tags')
-    search_fields = ('title', 'description', 'author__username')
+    list_display = ('id', 'title', 'author', 'status', 'display_tags_summary','version', 'requiredPoints', 'rating', 'download_count', 'collection_count','is_vip_free')
+    list_editable = ('status', 'is_vip_free',) 
+    list_filter = ('tags')
+    inlines = [GalleryDownloadRecordInline,GalleryCollectionInline]
+    search_fields = ('title', 'description', 'tags')
     autocomplete_fields = ['author', 'prerequisiteWork']
-    list_editable = ('status', 'version', 'requiredPoints') # 允许在列表页直接编辑版本号
-    filter_horizontal = ('tags',) 
-    is_vip_free: bool = False
+    filter_horizontal = ('tags')
+    fieldsets = (
+        ('核心管理', {'fields': ('status', 'is_vip_free','tags')}),
+        ('作品内容', {
+            'fields': (
+                'title', 'author', 'description', 'coverImage', 'workFile',
+                'requiredPoints', 'prerequisiteWork', 'version'
+            )
+        }),
+        ('数据统计', {
+            'fields': ('rating', 'estimated_download_time_formatted', 'created_at', 'updated_at')
+        }),
+    ) 
 
+    readonly_fields = (
+        'title', 'author', 'description', 'coverImage', 'workFile',
+        'requiredPoints', 'prerequisiteWork', 'version', 
+        'rating', 'estimated_download_time_formatted', 'created_at', 'updated_at'
+    )
+    def has_add_permission(self, request, obj=None):
+        return False
     # 自定义函数，用于计算并链接到下载记录
     def download_count(self, obj):
-        count = GalleryDownloadRecord.objects.filter(gallery_item=obj).count()
+        count = obj.downloaders.count()
         url = reverse('admin:api_gallerydownloadrecord_changelist') + f'?gallery_item__id__exact={obj.id}'
         return format_html('<a href="{}">{}</a>', url, count)
     download_count.short_description = '下载次数'
@@ -339,7 +447,32 @@ class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin):
         url = reverse('admin:api_gallerycollection_changelist') + f'?gallery_item__id__exact={obj.id}'
         return format_html('<a href="{}">{}</a>', url, count)
     collection_count.short_description = '收藏次数'
-
+    def display_tags_summary(self, obj):
+        """返回前三个标签的名称，用逗号分隔"""
+        tags = obj.tags.all() 
+        limit = 3
+        tag_list = [tag.name for tag in tags[:limit]]
+        if len(tags) > limit:
+            tag_summary = ", ".join(tag_list) + "..."
+        else:
+            tag_summary = ", ".join(tag_list)
+            
+        # 优化：如果需要链接到标签过滤页面，可以使用 mark_safe
+        # return mark_safe(f'<a href="/admin/myapp/tag/?q={tag_list[0]}">{tag_summary}</a>')
+        
+        return tag_summary
+    display_tags_summary.short_description = "标签"
+    def estimated_download_time_formatted(self, obj):
+        """将秒转换为更易读的分钟和秒"""
+        if obj.estimated_download_time and obj.estimated_download_time > 0:
+            total_seconds = int(obj.estimated_download_time)
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            if minutes > 0:
+                return f"{minutes} 分 {seconds} 秒"
+            return f"{seconds} 秒"
+        return "N/A" # 如果没有时间数据，则显示 N/A
+    estimated_download_time_formatted.short_description = '预计下载时间'
 
 @admin.register(GalleryCollection)
 class GalleryCollectionAdmin(admin.ModelAdmin):
@@ -362,27 +495,65 @@ class GalleryItemRatingAdmin(admin.ModelAdmin):
     search_fields = ['user__username', 'gallery_item__title']
     def get_model_perms(self, request): return {}
 
-#社群相关模型
-
+# ===============================================
+# =======       社群后台管理         =======
+# ===============================================
 
 @admin.register(Community)
 class CommunityAdmin(RichTextAdminMixin, admin.ModelAdmin):
     form = CommunityAdminForm
-    list_display = ('name', 'founder', 'created_at','member_count','display_tags')
+    list_display = ('name', 'founder','status','member_count','post_count','updated_at','display_tags_summary')
+    list_editable = ('status')
+    list_filter = ('tags')
     search_fields = ('name', 'description', 'founder__username')
     autocomplete_fields = ['founder','related_course','related_gallery_item']
     filter_horizontal = ('tags','assistants','members')
+    fieldsets = (
+        ('核心管理', {'fields': ('status', 'tags')}),
+        ('社群内容', {
+            'fields': ('name', 'founder', 'description', 'coverImage', 'tags')
+        }),
+        ('关联与门禁', {
+            'fields': ('related_course', 'related_gallery_item')
+        }),
+        ('成员管理', {
+            'fields': ('assistants', 'members')
+        }),
+        ('数据统计', {
+            'fields': ('post_count', 'created_at', 'updated_at')
+        }),
+    )
+    readonly_fields = (
+        'founder', 'description', 'coverImage', 'assistants', 'members',
+        'related_course', 'related_gallery_item', 'post_count', 
+        'created_at', 'updated_at'
+    )
+    def has_add_permission(self, request):
+        return False
     def member_count(self, obj):
         return obj.members.count()
     member_count.short_description = '成员人数'
-    def display_tags(self, obj):
-        return ", ".join([tag.name for tag in obj.tags.all()])
-    display_tags.short_description = '社群标签'
+    def display_tags_summary(self, obj):
+        """返回前三个标签的名称，用逗号分隔"""
+        tags = obj.tags.all() 
+        limit = 3
+        tag_list = [tag.name for tag in tags[:limit]]
+        if len(tags) > limit:
+            tag_summary = ", ".join(tag_list) + "..."
+        else:
+            tag_summary = ", ".join(tag_list)
+            
+        # 优化：如果需要链接到标签过滤页面，可以使用 mark_safe
+        # return mark_safe(f'<a href="/admin/myapp/tag/?q={tag_list[0]}">{tag_summary}</a>')
+        
+        return tag_summary
+    display_tags_summary.short_description = "标签"
 
 @admin.register(CommunityPost)
 class CommunityPostAdmin(RichTextAdminMixin,admin.ModelAdmin):
-    list_display = ('title', 'community', 'author', 'status', 'rewardPoints', 'created_at','participant_count')
-    list_filter = ('status', 'community')
+    list_display = ('title', 'status','community', 'author', 'rewardPoints', 'created_at','participant_count')
+    list_editable =('status')
+    list_filter = ('community')
     search_fields = ('title', 'content', 'author__username')
     autocomplete_fields = ['community', 'author', 'best_answer']
     inlines = [CommunityReplyInline]
@@ -498,7 +669,7 @@ class PendingCertificationRequestAdmin(admin.ModelAdmin):
         queryset.update(status='rejected')
     reject_selected.short_description = "驳回选中的认证"
 
-# --- 隐藏原有的 CertificationRequest 入口 ---
+
 @admin.register(CertificationRequest)
 class CertificationRequestAdmin(admin.ModelAdmin):
     list_display = ('applicant', 'status', 'submissionDate')
@@ -514,33 +685,34 @@ class MessageThreadAdmin(admin.ModelAdmin):
     list_display = ('subject', 'thread_type', 'created_at')
     search_fields = ('subject', 'messages__content', 'participants__username')
     list_filter = ('thread_type',)
-    
+    readonly_fields = ('created_at','last_message_at')
     autocomplete_fields = ['participants']
     filter_horizontal = ('participants',)
     inlines = [MessageInline]
-
     def save_formset(self, request, form, formset, change):
         instances = formset.save(commit=False)
         thread = form.instance
-        
-        participants = set(thread.participants.all())
-        
+        latest_message_time = thread.last_message_at or thread.created_at        
         for instance in instances:
             if not instance.pk and isinstance(instance, Message):
                 if not instance.cc_recipient:
                     admin_user = User.objects.filter(is_superuser=True).first()
                     if admin_user:
-                        instance.cc_recipient = None
+                        instance.cc_recipient = admin_user
             instance.save()
+            if instance.sent_at > latest_message_time:
+                latest_message_time = instance.sent_at
             
-            if instance.sender: participants.add(instance.sender)
-            if instance.recipient: participants.add(instance.recipient)
-            if instance.cc_recipient: participants.add(instance.cc_recipient)
+            formset.save_m2m()
 
-        formset.save_m2m()
+        participants = set(thread.participants.all())
+        for message in thread.messages.all():
+            if message.sender: participants.add(message.sender)
+            if message.recipient: participants.add(message.recipient)
+            if message.cc_recipient: participants.add(message.cc_recipient)
         thread.participants.set(participants)
-        super().save_model(request, thread, form, change)
-
+        thread.last_message_at = latest_message_time
+        thread.save()
 
 @admin.register(Message)
 class MessageAdmin(admin.ModelAdmin):
