@@ -125,7 +125,7 @@ class GalleryCollectionInline(admin.TabularInline):
 
     def get_queryset(self, request):
         # 默认只显示最近的 20 条收藏记录
-        return super().get_queryset(request).order_by('-collected_at')[:20]
+        return super().get_queryset(request).order_by('-collected_at')
 
 class AuthoredCoursesInline(admin.TabularInline):
     model = Course
@@ -203,19 +203,18 @@ class MessageInline(admin.TabularInline):
 class UserAdmin(BaseUserAdmin):
     actions = ['suspend_accounts', 'activate_accounts', 'promote_to_artist']
     # 定义在 user 搜索框中可以搜索的字段
-    list_display = ('username', 'email', 'nickname', 'role','accountStatus','currentPoints', 'is_staff','is_vip','is_beta_tester', 'last_activity_at','date_joined')
+    list_display = ('username', 'email', 'nickname', 'role','accountStatus','currentPoints','last_activity_at','date_joined')
     list_filter = ('role','accountStatus','groups')
-    boolean_fields = ['is_vip', 'is_beta_tester','is_staff','is_superuser','is_active']
+    boolean_fields = ['is_beta_tester','is_staff']
     search_fields = ['username', 'email', 'phone', 'nickname']
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
-        ('核心信息', {'fields': ('nickname', 'email', 'phone', 'bio')}),
-        ('用户画像', {'fields': ('ageGroup', 'gender', 'interests')}),
-        ('平台数据', {'fields': ('role', 'is_vip', 'vip_expiration_date', 'currentPoints')}),
+        ('核心信息', {'fields': ('nickname', 'email', 'phone')}),
+        ('用户画像', {'fields': ('avatarUrl', 'bio','ageGroup', 'gender', 'interests')}),
+        ('权限控制', {'fields': ('role', 'vip_expiration_date', 'currentPoints', 'is_staff', 'is_beta_tester','groups')}),
         ('状态控制', {'fields': ('accountStatus', 'pointsStatus')}),
-        ('内部标识', {'fields': ('is_beta_tester', 'wechat_openid', 'is_deleted', 'deleted_at')}),
+        ('内部标识', {'fields': ('wechat_openid', 'is_deleted', 'deleted_at')}),
         ('关联内容', {'fields': ('posts_link',)}),
-        ('权限', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups')}),
         ('重要日期', {'fields': ('last_login', 'date_joined', 'last_activity_at')}),
         ('缓存计数', {'fields': ('unread_message_count', 'posts_authored_count', 'items_authored_count', 'course_authored_count')}),
     )
@@ -224,7 +223,6 @@ class UserAdmin(BaseUserAdmin):
         'unread_message_count', 'posts_authored_count', 'items_authored_count', 
         'course_authored_count', 'deleted_at'
     )
-
     inlines = [
         PointsTransactionInline,
         SubscriptionInline,
@@ -233,6 +231,16 @@ class UserAdmin(BaseUserAdmin):
         AuthoredGalleryItemsInline,
         CertificationRequestInline,
     ]
+    def avatar_thumbnail(self, obj):
+        """
+        在后台显示头像的缩略图。
+        obj 代表当前的 User 实例。
+        """
+        if obj.avatarUrl:
+            return format_html('<a href="{}"><img src="{}" width="50" height="50" style="object-fit: cover; border-radius: 50%;" /></a>', obj.avatarUrl.url, obj.avatarUrl.url)
+        return "无头像"
+    
+    avatar_thumbnail.short_description = '头像预览'
     def posts_link(self, obj):
         count = obj.community_posts.count()
         url = reverse('admin:api_communitypost_changelist') + f'?author__id__exact={obj.id}'
@@ -269,7 +277,7 @@ class CourseAdmin(RichTextAdminMixin, VersionAdmin):
         'id', 'title', 'author', 'status', 'chapter_count', 
         'subscription_link', 'collection_link',
         'completion_rate','is_vip_free','display_tags_summary')
-    list_filter = ('tags')
+    list_filter = ('tags',)
     list_editable = ('status', 'is_vip_free')
     search_fields = ['title', 'description', 'author__username']
     fieldsets = (
@@ -278,7 +286,7 @@ class CourseAdmin(RichTextAdminMixin, VersionAdmin):
         ('时间戳 ', {'fields': ('created_at', 'updated_at')}),
     )
     inlines = [ChapterInline]
-    filter_horizontal = ('tags')
+    filter_horizontal = ('tags',)
     readonly_fields = ('title', 'description', 'author', 'pricePoints', 'coverImage','created_at', 'updated_at') 
     def has_add_permission(self, request, obj=None):
         return False
@@ -335,7 +343,7 @@ class ExerciseAdmin(RichTextAdminMixin, admin.ModelAdmin):
     list_display = ('id', 'prompt', 'chapter', 'type', 'completion_count','display_custom_id')
     list_filter = ('type', 'chapter__course',)
     search_fields = ('prompt', 'explanation','type')
-    inlines = [OptionInline,FillInBlankInline,UserExerciseSubmission]
+    inlines = [OptionInline,FillInBlankInline,UserExerciseSubmissionInline]
     autocomplete_fields = ['chapter']
     def get_inlines(self, request, obj=None):
         if obj:
@@ -409,11 +417,11 @@ class TagAdmin(admin.ModelAdmin):
 class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin): 
     list_display = ('id', 'title', 'author', 'status', 'display_tags_summary','version', 'requiredPoints', 'rating', 'download_count', 'collection_count','is_vip_free')
     list_editable = ('status', 'is_vip_free',) 
-    list_filter = ('tags')
+    list_filter = ('tags',)
     inlines = [GalleryDownloadRecordInline,GalleryCollectionInline]
     search_fields = ('title', 'description', 'tags')
     autocomplete_fields = ['author', 'prerequisiteWork']
-    filter_horizontal = ('tags')
+    filter_horizontal = ('tags',)
     fieldsets = (
         ('核心管理', {'fields': ('status', 'is_vip_free','tags')}),
         ('作品内容', {
@@ -449,18 +457,24 @@ class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin):
     collection_count.short_description = '收藏次数'
     def display_tags_summary(self, obj):
         """返回前三个标签的名称，用逗号分隔"""
-        tags = obj.tags.all() 
+         # 1. 立即執行查詢並將結果轉換為一個 Python 列表
+       #    使用 list() 會立即觸發資料庫查詢
+        all_tags = list(obj.tags.all())
+       
         limit = 3
-        tag_list = [tag.name for tag in tags[:limit]]
-        if len(tags) > limit:
-            tag_summary = ", ".join(tag_list) + "..."
+       
+       # 2. 現在對這個普通的 Python 列表進行切片，這是完全安全的
+        tags_to_display = all_tags[:limit]
+       
+       # 3. 構建顯示的字串
+        tag_list = [tag.name for tag in tags_to_display]
+       
+       # 4. (效率優化) 使用 len() 檢查列表長度，而不是對 QuerySet 使用 .count()
+        if len(all_tags) > limit:
+            return ", ".join(tag_list) + "..."
         else:
-            tag_summary = ", ".join(tag_list)
-            
-        # 优化：如果需要链接到标签过滤页面，可以使用 mark_safe
-        # return mark_safe(f'<a href="/admin/myapp/tag/?q={tag_list[0]}">{tag_summary}</a>')
-        
-        return tag_summary
+            return ", ".join(tag_list)
+           
     display_tags_summary.short_description = "标签"
     def estimated_download_time_formatted(self, obj):
         """将秒转换为更易读的分钟和秒"""
@@ -503,15 +517,16 @@ class GalleryItemRatingAdmin(admin.ModelAdmin):
 class CommunityAdmin(RichTextAdminMixin, admin.ModelAdmin):
     form = CommunityAdminForm
     list_display = ('name', 'founder','status','member_count','post_count','updated_at','display_tags_summary')
-    list_editable = ('status')
-    list_filter = ('tags')
+    list_editable = ('status',)
+    list_filter = ('tags',)
     search_fields = ('name', 'description', 'founder__username')
     autocomplete_fields = ['founder','related_course','related_gallery_item']
     filter_horizontal = ('tags','assistants','members')
     fieldsets = (
         ('核心管理', {'fields': ('status', 'tags')}),
         ('社群内容', {
-            'fields': ('name', 'founder', 'description', 'coverImage', 'tags')
+            'fields': ('name', 'founder', 'description', 
+                       'coverImage')
         }),
         ('关联与门禁', {
             'fields': ('related_course', 'related_gallery_item')
@@ -552,8 +567,8 @@ class CommunityAdmin(RichTextAdminMixin, admin.ModelAdmin):
 @admin.register(CommunityPost)
 class CommunityPostAdmin(RichTextAdminMixin,admin.ModelAdmin):
     list_display = ('title', 'status','community', 'author', 'rewardPoints', 'created_at','participant_count')
-    list_editable =('status')
-    list_filter = ('community')
+    list_editable =('status',)
+    list_filter = ('community',)
     search_fields = ('title', 'content', 'author__username')
     autocomplete_fields = ['community', 'author', 'best_answer']
     inlines = [CommunityReplyInline]

@@ -18,6 +18,9 @@
               <h4>{{ course.title }}</h4>
               <p>状态: {{ course.status }}</p>
             </router-link>
+            <div class="card-actions">
+              <router-link :to="{ name: 'edit-course', params: { id: course.id } }" class="edit-btn">编辑</router-link>
+            </div>
           </div>
         </div>
         <p v-else class="empty-message">您还没有创建任何课程。</p>
@@ -34,6 +37,9 @@
               <h4>{{ item.title }}</h4>
               <p>版本: v{{ item.version }}</p>
             </router-link>
+            <div class="card-actions">
+              <router-link :to="{ name: 'edit-gallery-item', params: { id: item.id } }" class="edit-btn">编辑</router-link>
+            </div>
           </div>
         </div>
         <p v-else class="empty-message">您还没有发布任何画廊作品。</p>
@@ -50,6 +56,9 @@
               <h4>{{ community.name }}</h4>
               <p>帖子数: {{ community.post_count }}</p>
             </router-link>
+            <div class="card-actions">
+              <router-link :to="{ name: 'edit-community', params: { id: community.id } }" class="edit-btn">编辑</router-link>
+            </div>
           </div>
         </div>
         <p v-else class="empty-message">您还没有创建任何社群。</p>
@@ -88,21 +97,16 @@ onMounted(async () => {
   padding-bottom: 1rem;
   border-bottom: 1px solid #eee;
 }
-.header h2 {
-  margin: 0;
-}
-section { 
-  margin-bottom: 2.5rem; 
-}
+.header h2 { margin: 0; }
+
+section { margin-bottom: 2.5rem; }
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
 }
-.section-header h3 {
-  margin: 0;
-}
+.section-header h3 { margin: 0; }
 .create-btn {
   background-color: #007bff;
   color: white;
@@ -112,10 +116,31 @@ section {
   font-weight: 500;
   font-size: 0.9rem;
 }
+
 .item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
-.item-card { border: 1px solid #eee; padding: 1rem; border-radius: 4px; transition: background-color 0.2s; }
-.item-card:hover { background-color: #f9f9f9; }
+.item-card {
+  border: 1px solid #eee;
+  padding: 1rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
 .item-card a { text-decoration: none; color: inherit; }
 .item-card h4 { margin: 0 0 0.5rem 0; }
+.card-actions {
+  margin-top: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f0f0f0;
+  text-align: right;
+}
+.edit-btn {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background-color: #6c757d;
+  color: white;
+  text-decoration: none;
+}
 .loading, .error, .empty-message { color: #888; margin-top: 1rem; }
 </style>

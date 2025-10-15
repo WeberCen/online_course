@@ -1,65 +1,69 @@
 # backend/api/permissions.py
 
-# backend/api/permissions.py
-
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission,SAFE_METHODS
 from .models import Community, Subscription, GalleryDownloadRecord
 
-class CanPostOrReplyInCommunity(BasePermission):
-    """
-    自定义权限，检查用户是否可以在特定社群中发帖或回帖。(逻辑修复版)
-    """
-    message = "You do not have permission to post or reply in this community."
+# ===============================================
+# =======    角色权限 (Role Permissions)     =======
+# ===============================================
 
+class IsStudent(BasePermission):
+    """允许学生或更高等级的角色访问"""
     def has_permission(self, request, view):
-        # ... (获取 community 的部分保持不变) ...
-        community_pk = view.kwargs.get('community_pk')
-        post_pk = view.kwargs.get('post_pk')
-        community = None
-        if community_pk:
-            try:
-                community = Community.objects.get(pk=community_pk)
-            except Community.DoesNotExist:
-                self.message = "Community not found."; return False
-        elif post_pk:
-            try:
-                community = Community.objects.get(posts__pk=post_pk)
-            except Community.DoesNotExist:
-                self.message = "Community for the post not found."; return False
-        else:
-            return False
+        return request.user.is_authenticated and request.user.role in ['student', 'artist', 'admin']
 
-        # --- 核心权限检查逻辑 (全新升级) ---
-        
-        # 1. 检查社群是否为开放社群
-        if not community.related_course and not community.related_gallery_item:
-            return True # 开放社群，允许
+class IsArtist(BasePermission):
+    """只允许创作者或更高等级的角色访问"""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in ['artist', 'admin']
 
-        # 2. 如果是门禁社群，用户必须已登录
-        if not request.user.is_authenticated:
-            self.message = "You must be logged in to post in this restricted community."
-            return False
-
-        user = request.user
-        
-        # 3. 检查是否满足课程订阅条件 (如果有关联)
-        if community.related_course:
-            has_course_permission = Subscription.objects.filter(user=user, course=community.related_course).exists()
-            if not has_course_permission:
-                self.message = f"You must be subscribed to the course '{community.related_course.title}' to post here."
-                return False # 不满足课程条件，直接拒绝
-
-        # 4. 检查是否满足作品下载条件 (如果有关联)
-        if community.related_gallery_item:
-            has_gallery_permission = GalleryDownloadRecord.objects.filter(user=user, gallery_item=community.related_gallery_item).exists()
-            if not has_gallery_permission:
-                self.message = f"You must own the gallery item '{community.related_gallery_item.title}' to post here."
-                return False # 不满足画廊条件，直接拒绝
-            
-        # 只有通过了所有存在的检查，才能最终被允许
-        return True
+class IsAdmin(BasePermission):
+    """只允许管理员访问"""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role == 'admin'
     
-class IsCreator(BasePermission):
-    message = "You must be a creator (Student-Artist) to perform this action."
+# ===============================================
+# =======    对象权限 (Object Permissions)   =======
+# ===============================================
+
+class IsOwner(BasePermission):
+    """只允许对象的所有者 (author/founder) 进行写入操作"""
+    def has_object_permission(self, request, view, obj):
+        # 读取权限对所有人开放
+        if request.method in SAFE_METHODS:
+            return True
+        
+        # 检查对象是否有 'author' 或 'founder' 字段
+        if hasattr(obj, 'author'):
+            return obj.author == request.user
+        if hasattr(obj, 'founder'):
+            return obj.founder == request.user
+        
+        return False
+
+class IsPaidUsers(BasePermission):
+    """
+    自訂權限：檢查用戶是否有權限在「門禁社群」中發言。
+    """
+    message = "您需要先訂閱關聯課程或下載關聯作品才能在此社群發言。"
+
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'Student-Artist'
+        # 從 URL 中獲取正在操作的社群 ID
+        community_pk = view.kwargs.get('community_pk')
+        try:
+            community = Community.objects.get(pk=community_pk)
+        except Community.DoesNotExist:
+            return False
+        
+        if community.related_course is None and community.related_gallery_item is None:
+            return True
+         
+        user = request.user
+        if community.related_course:
+            if Subscription.objects.filter(user=user, course=community.related_course).exists():
+                return True  
+        if community.related_gallery_item:
+            if GalleryDownloadRecord.objects.filter(user=user, gallery_item=community.related_gallery_item).exists():
+                return True  
+
+        return False 

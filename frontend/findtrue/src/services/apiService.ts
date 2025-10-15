@@ -111,6 +111,10 @@ export const getCommunities = () => {
   return apiClient.get<Community[]>('/communities/');
 };
 
+export const getCommunityDetail = (communityId: string) => {
+  return apiClient.get<Community>(`/communities/${communityId}/`);
+};
+
 export const getPostsForCommunity = (communityId: string) => {
   return apiClient.get<CommunityPostListItem[]>(`/communities/${communityId}/posts/`);
 };
@@ -198,5 +202,22 @@ export const createCommunity = (communityData: FormData) => {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+  });
+};
+export const updateCourse = (courseId: string, courseData: FormData) => {
+  return apiClient.put<Course>(`/creator/courses/${courseId}/`, courseData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const updateGalleryItem = (itemId: string, itemData: FormData) => {
+  return apiClient.put<GalleryItem>(`/creator/gallery/${itemId}/`, itemData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const updateCommunity = (communityId: string, communityData: FormData) => {
+  return apiClient.put<Community>(`/creator/communities/${communityId}/`, communityData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
 };

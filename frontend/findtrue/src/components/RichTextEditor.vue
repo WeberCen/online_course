@@ -17,11 +17,11 @@ import Image from '@tiptap/extension-image';
 import { ref, watch } from 'vue';
 import { uploadEditorImage } from '@/services/apiService';
 
-const props = defineProps<{ modelValue: string }>();
+const props = defineProps<{ modelValue: string | null | undefined }>();
 const emit = defineEmits(['update:modelValue']);
 
 const editor = useEditor({
-  content: props.modelValue,
+  content: props.modelValue || '',
   extensions: [StarterKit, Image],
   onUpdate: () => {
     emit('update:modelValue', editor.value?.getHTML() || '');
@@ -29,8 +29,13 @@ const editor = useEditor({
 });
 
 watch(() => props.modelValue, (newValue) => {
-  if (editor.value?.getHTML() === newValue) return;
-  editor.value?.commands.setContent(newValue, false);
+  const isSame = editor.value?.getHTML() === newValue;
+  if (isSame) {
+    return;
+  }
+  editor.value?.commands.setContent(newValue || '', {
+    emitUpdate: false, 
+  });
 });
 
 const imageUploader = ref<HTMLInputElement | null>(null);

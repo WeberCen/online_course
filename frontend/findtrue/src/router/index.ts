@@ -93,6 +93,9 @@ const router = createRouter({
         { path: 'creations/new-course', name: 'create-course', component: CreateCourseView },
         { path: 'creations/new-gallery-item', name: 'create-gallery-item', component: CreateGalleryItemView },
         { path: 'creations/new-community', name: 'create-community', component: CreateCommunityView },
+        { path: 'creations/courses/:id/edit', name: 'edit-course', component: CreateCourseView },
+        { path: 'creations/gallery/:id/edit', name: 'edit-gallery-item', component: CreateGalleryItemView },
+        { path: 'creations/communities/:id/edit', name: 'edit-community', component: CreateCommunityView },
         {
           path: 'participations',
           name: 'my-participations',

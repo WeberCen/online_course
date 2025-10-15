@@ -318,6 +318,17 @@ class UserChapterCompletion(models.Model):
         verbose_name_plural = verbose_name
         unique_together = ('user', 'chapter')
 
+class UserExerciseCompletion(models.Model):
+    """追蹤用戶完成練習題的記錄"""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='completed_exercises_records')
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE)
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # 確保同一個用戶對同一道題只有一條完成記錄
+        unique_together = ('user', 'exercise')
+        verbose_name = "用戶練習完成記錄"
+
 
 # ===============================================
 # =======         画廊模块模型         =======
@@ -582,8 +593,6 @@ class PendingReviewManager(models.Manager):
             return super().get_queryset().filter(status='pending')
         else:
             return super().get_queryset().filter(status='pending_review')
-
-# --- 为每种需要审核的内容创建代理模型 ---
 
 class PendingCourse(Course):
     objects = PendingReviewManager()

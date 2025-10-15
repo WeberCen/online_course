@@ -1,24 +1,30 @@
 # backend/api/serializers.py
-
+import random
 from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User,CertificationRequest,Course,Chapter,Exercise
-from .models import (Subscription, Collection, 
+from .models import (Subscription, Collection, Option, fill_in_blank,
                      GalleryItem, GalleryCollection, GalleryDownloadRecord, 
                      GalleryItemRating,Community,CommunityPost,CommunityReply,
                      Message,MessageThread)
  
+# ===============================================
+# =======       基础配置  Serializers     =======
+# ===============================================
+
+
 class UserRegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
     password2 = serializers.CharField(write_only=True, required=True, label="Confirm password", style={'input_type': 'password'})
-
+    
     class Meta:
         model = User
-        fields = ['username', 'email', 'phone', 'password', 'password2', 'nickname', 'ageGroup', 'gender', 'interests']
+        fields = ['username','nickname','avatarUrl','bio','email','phone','password','password2','ageGroup','gender','interests']
         extra_kwargs = {
+            'username': {'required': True},
             'email': {'required': True},
-            'phone': {'required': True}
+            'phone': {'required': True},     
         }
 
     def validate(self, attrs):
@@ -39,17 +45,11 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        password = validated_data.pop('password')
+        validated_data.pop('password2')
         # 创建用户实例，注意要对密码进行哈希加密
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            phone=validated_data['phone'],
-            nickname=validated_data.get('nickname', ''),
-            ageGroup=validated_data.get('ageGroup'),
-            gender=validated_data.get('gender'),
-            interests=validated_data.get('interests', [])
-        )
-        user.set_password(validated_data['password'])
+        user = User.objects.create_user(**validated_data)
+        user.set_password(password)
         user.save()
         return user
 
@@ -88,22 +88,21 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = User
         # 定义需要展示或可以更新的字段
         fields = [
-            'id', 'username', 'email', 'phone', 'nickname', 'avatarUrl',
+            'id', 'username', 'avatarUrl','email', 'phone', 'nickname', 
             'currentPoints', 'role', 'ageGroup', 'gender', 'interests',
-            'accountStatus', 'pointsStatus'
+            'accountStatus', 'pointsStatus', 'bio',
+            'vip_expiration_date','is_staff','is_beta_tester','unread_message_count',
+            'posts_authored_count','items_authored_count','course_authored_count',
+            'completed_chapters'
         ]
         # 设置某些字段为只读，防止用户通过此接口修改它们
         read_only_fields = [
-            'id', 'username', 'email', 'phone', 'currentPoints', 'role',
-            'accountStatus', 'pointsStatus'
+            'id', 'username', 'avatarUrl','email', 'phone', 'currentPoints', 'role',
+            'accountStatus', 'pointsStatus',
+            'vip_expiration_date','is_staff','is_beta_tester','unread_message_count',
+            'posts_authored_count','items_authored_count','course_authored_count',
+            'completed_chapters'
         ]
-class AvatarUpdateSerializer(serializers.ModelSerializer):
-    """
-    专门用于头像更新的序列化器
-    """
-    class Meta:
-        model = User
-        fields = ['avatarUrl']
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     """
@@ -180,17 +179,40 @@ class UserSummarySerializer(serializers.ModelSerializer):
     """用于嵌套在其他模型中的简化版用户信息"""
     class Meta:
         model = User
-        fields = ['id', 'username', 'nickname', 'avatarUrl']
+        fields = ['id', 'nickname', 'avatarUrl']
 
 # ===============================================
 # =======         课程模块 Serializers     =======
 # ===============================================
 
+class OptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['id', 'text','is_correct']
+
+class FillInBlankAnswerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = fill_in_blank
+        fields = ['id', 'index_number', 'correct_answer', 'case_sensitive']
+
 class ExerciseSerializer(serializers.ModelSerializer):
-    options = serializers.StringRelatedField(many=True, read_only=True)
+    answer_details = serializers.SerializerMethodField()
     class Meta:
         model = Exercise
-        fields = ['id', 'prompt', 'type', 'options'] 
+        fields = ['id', 'chapter', 'type','prompt', 
+                  'explanation', 'image_upload', 
+                  'image_url', 'answer_details']
+        read_only_fields = ['id', 'chapter', 'type', 'prompt', 
+                  'explanation']
+    def get_answer_details(self, obj):
+        if obj.type == 'multiple-choice':
+            options = obj.options.all()
+            return OptionSerializer(options, many=True).data
+        
+        elif obj.type == 'fill-in-the-blank':
+            blanks = obj.fill_in_blanks.all()
+            return FillInBlankAnswerSerializer(blanks, many=True).data
+        return None
 
 class ChapterSerializer(serializers.ModelSerializer):
     """章节信息的序列化器（包含练习题）"""
@@ -200,19 +222,33 @@ class ChapterSerializer(serializers.ModelSerializer):
         model = Chapter
         fields = ['id', 'title', 'order', 'videoUrl', 'exercises']
 
+
 class CourseListSerializer(serializers.ModelSerializer):
     """用于课程列表的序列化器"""
     author = UserSummarySerializer(read_only=True)
     chapterCount = serializers.SerializerMethodField()
-    tags = serializers.StringRelatedField(many=True, read_only=True) # 将标签显示为名称
+    followers_count = serializers.SerializerMethodField()
+    display_tags = serializers.StringRelatedField(many=True, read_only=True) 
 
     class Meta:
         model = Course
-        fields = ['id', 'title', 'description', 'coverImage', 'pricePoints', 'author', 'tags', 'chapterCount', 'status']
+        fields = ['id', 'title', 'description', 'coverImage', 
+                  'author', 'display_tags', 'chapterCount', 
+                  'created_at','status','followers_count']
 
     def get_chapterCount(self, obj):
-        # 计算该课程下的章节总数
         return obj.chapters.count()
+    def get_followers_count(self, obj):
+        collectors_count = obj.collectors.count()
+        subscribers_count = obj.subscribers.count()
+        return collectors_count + subscribers_count
+    def get_display_tags(self, obj):
+        all_tags = obj.tags.all()
+        if all_tags.count() <= 3:
+             return [tag.name for tag in all_tags] 
+        else:
+             sampled_tags = random.sample(list(all_tags), 3)
+        return [tag.name for tag in sampled_tags]
 
 class CourseDetailSerializer(CourseListSerializer):
     """
@@ -224,7 +260,10 @@ class CourseDetailSerializer(CourseListSerializer):
     is_collected = serializers.SerializerMethodField()
 
     class Meta(CourseListSerializer.Meta):
-        fields = CourseListSerializer.Meta.fields + ['chapters', 'is_subscribed', 'is_collected']
+
+        fields = CourseListSerializer.Meta.fields + [
+            'pricePoints', 'tags','is_vip_free','chapters', 'is_subscribed', 'is_collected']
+        
     def get_is_subscribed(self, obj):
         user = self.context['request'].user
         if user and user.is_authenticated:
@@ -242,18 +281,18 @@ class CourseDetailSerializer(CourseListSerializer):
         user = self.context['request'].user
 
         # 游客、未订阅用户，只看前三章
-        if not is_subscribed and (not hasattr(user, 'is_staff') or not user.is_staff):
+        if not is_subscribed:
             chapters_queryset = obj.chapters.all()[:3]
         else: # 已订阅用户或管理员，看全部
             chapters_queryset = obj.chapters.all()
         
         return ChapterSerializer(chapters_queryset, many=True, context=self.context).data
     
-    
+  
 class SimpleCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
-        fields = ['id', 'title', 'coverImage']
+        fields = ['id', 'title']
 
 class SimpleChapterSerializer(serializers.ModelSerializer):
     class Meta:
@@ -264,10 +303,9 @@ class CourseProgressSerializer(serializers.Serializer):
     """课程进度序列化器"""   
     # 关联对象信息
     course = SimpleCourseSerializer(read_only=True)
-    
     # 核心进度量化
-    completedChapters = serializers.IntegerField()
-    totalChapters = serializers.IntegerField()
+    completedExercises = serializers.IntegerField() 
+    totalExercises = serializers.IntegerField()     
     progressPercentage = serializers.SerializerMethodField()
     isCompleted = serializers.BooleanField()
     
@@ -283,11 +321,11 @@ class CourseProgressSerializer(serializers.Serializer):
     def get_progressPercentage(self, obj):
         """动态计算进度百分比"""
         # obj 是传入的数据对象或字典
-        completed = obj.get('completedChapters', 0)
-        total = obj.get('totalChapters', 0)
+        completed = obj.get('completedExercises', 0)
+        total = obj.get('totalExercises', 0)
         
         if total > 0:
-            return round((completed / total) * 100)
+            return round((completed / total) * 100,2)
         return 0
 
 
@@ -309,14 +347,27 @@ class ExerciseSubmissionSerializer(serializers.Serializer):
 class GalleryListSerializer(serializers.ModelSerializer):
     """用于画廊作品列表的序列化器"""
     author = UserSummarySerializer(read_only=True)
-    tags = serializers.StringRelatedField(many=True, read_only=True)
+    display_tags = serializers.StringRelatedField(many=True, read_only=True)
+    followers_count = serializers.SerializerMethodField()
     
     class Meta:
         model = GalleryItem
         fields = [
-            'id', 'title', 'description', 'coverImage', 'author', 
-            'tags', 'requiredPoints', 'rating', 'version'
+            'id', 'title', 'description', 'coverImage', 'author', 'created_at',
+            'display_tags', 'requiredPoints', 'rating', 'version', 'followers_count'
         ]
+    def get_followers_count(self, obj):
+        collectors_count = obj.collectors.count()
+        downloaders_count = obj.downloaders.count()
+        return collectors_count + downloaders_count
+    def get_display_tags(self, obj):
+        all_tags = obj.tags.all()
+        if all_tags.count() <= 3:
+             return [tag.name for tag in all_tags] 
+        else:
+             sampled_tags = random.sample(list(all_tags), 3)
+        return [tag.name for tag in sampled_tags]
+
 
 class GalleryDetailSerializer(GalleryListSerializer):
     """
@@ -348,11 +399,12 @@ class CommunityListSerializer(serializers.ModelSerializer):
     """【第一级页面使用】：用于“社群板块列表”"""
     founder = UserSummarySerializer(read_only=True)
     post_count = serializers.SerializerMethodField()
-    tags = serializers.StringRelatedField(many=True, read_only=True) # <-- 修正 1: tags
+    tags = serializers.StringRelatedField(many=True, read_only=True)
+    
 
     class Meta:
         model = Community
-        fields = ['id', 'name', 'description', 'founder', 'coverImage', 'tags', 'post_count'] # <-- 修正 2: tags, 不重复
+        fields = ['id', 'name', 'description', 'founder', 'coverImage', 'tags', 'post_count'] 
 
     def get_post_count(self, obj):
         return obj.posts.filter(status='published').count()
@@ -420,8 +472,17 @@ class CommunityCreateSerializer(serializers.ModelSerializer):
     """【创建社群用】的序列化器"""
     class Meta:
         model = Community
-        # 创作者需要提交的字段
-        fields = ['name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item']
+        fields = ['name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item','assistants']
+class CommunityDetailSerializer(serializers.ModelSerializer):
+    """【编辑/详情页使用】用于获取单个社群的完整可编辑详情"""
+    founder = UserSummarySerializer(read_only=True)
+    class Meta:
+        model = Community
+        # 包含所有创作者可编辑的字段
+        fields = [
+            'id', 'name', 'description', 'founder', 'coverImage', 
+            'tags', 'related_course', 'related_gallery_item'
+        ]
 
 # ===============================================
 # =======    站内信 API Serializers  =======

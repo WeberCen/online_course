@@ -1,9 +1,41 @@
+// frontend/findtrue/src/types.ts
+
+// ===============================================
+// =======          核心基础类型          =======
+// ===============================================
+
+
 export interface Author {
   id: number;
   username: string;
   nickname?: string;
   avatarUrl?: string | null;
 }
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  phone: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+  role: 'student' | 'artist' | 'admin';
+  currentPoints: number;
+  ageGroup: string | null;
+  gender: string | null;
+  interests: string[];
+  accountStatus: 'active' | 'suspended' | 'frozen';
+  pointsStatus: 'active' | 'frozen';
+  bio: string | null;
+  vip_expiration_date: string | null; 
+  last_activity_at: string | null;
+  unread_message_count: number;
+  is_beta_tester: boolean;
+}
+
+export type UserProfileUpdatePayload = Partial<Pick<User, 'nickname' | 'ageGroup' | 'gender' | 'interests' | 'bio'>>;
+
+
+
 // ===============================================
 // =======          课程模块类型          =======
 // ===============================================
@@ -19,13 +51,13 @@ export interface Course {
   id: number;
   title: string;
   description: string;
-  coverImage?: string | File | null;
+  coverImage: string | null;
   author: Author;
   tags: string[];
   chapterCount: number;
-  status: string;
+  status: 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived';
   pricePoints: number;
-  is_vip_free: boolean;
+  is_vip_free: boolean; 
 }
 
 export interface CourseDetail extends Course {
@@ -42,9 +74,13 @@ export interface ExerciseAnswer {
 export interface Exercise {
   id: number;
   prompt: string;
-  type: 'multiple-choice' | 'fill-in-the-blank'; 
-  options?: string[]; 
+  type: 'multiple-choice' | 'fill-in-the-blank';
+  options?: string[];
+  explanation: string | null; // 新增
+  image_upload: string | null; // 新增
+  image_url: string | null; // 新增
 }
+
 
 export interface Progress {
   completedChapters: number;
@@ -65,13 +101,14 @@ export interface GalleryItem {
   id: number;
   title: string;
   description: string;
-  coverImage?: string | File | null;
+  coverImage: string | null;
   author: Author;
   tags: string[];
   requiredPoints: number;
   rating: number;
   version: string;
-  is_vip_free: boolean;
+  is_vip_free: boolean; // 新增
+  estimated_download_time: number; // 新增
 }
 
 export interface GalleryItemDetail extends GalleryItem {
@@ -89,9 +126,11 @@ export interface Community {
   description: string;
   founder: Author;
   post_count: number;
-  coverImage?: string | File | null;
+  coverImage?: string | null;
   tags: string[];
+  status: 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived'; // 新增
 }
+
 
 export interface CommunityPostListItem {
   id: number;
@@ -107,8 +146,8 @@ export interface CommunityReply {
   id: number;
   author: Author;
   content: string;
-  created_at: string; 
-  is_best_answer: boolean;
+  created_at: string;
+  likes: number[]; 
 }
 
 export interface CommunityPost {
@@ -116,32 +155,36 @@ export interface CommunityPost {
   title: string;
   content: string;
   author: Author;
-  status: string;
+  status: 'pending_review' | 'published' | 'closed' | 'rejected';
   rewardPoints: number;
   created_at: string;
   updated_at: string;
   best_answer: number | null;
   replies: CommunityReply[];
   likes: number[];
-} 
+}
 // ===============================================
 // =======         站内信模块类型         =======
 // ===============================================
 export interface Message {
   id: number;
   sender: Author;
+  recipient: Author; // 新增
   content: string;
   sent_at: string;
+  is_recipient_read: boolean; // 新增
 }
 
 
 export interface MessageThread {
   id: number;
   subject: string;
-  thread_type: string;
+  thread_type: 'notification' | 'conversation';
   last_message: Message | null;
   created_at: string;
+  last_message_at: string | null; // 新增
 }
+
 
 
 export interface MessageThreadDetail {
@@ -176,19 +219,13 @@ export interface MyCreations {
 export interface MyParticipations {
   posts: CommunityPostListItem[];
 }
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  phone: string;
-  nickname: string | null;
-  avatarUrl: string | null;
-  role: string;
-  currentPoints: number;
-  ageGroup: string | null;
-  gender: string | null;
-  interests: string[];
-  accountStatus: string;
-  pointsStatus: string;
+
+// ===============================================
+// =======         VIP 套餐类型         =======
+// ===============================================
+export interface VipPlan {
+    id: number;
+    name: string;
+    duration_days: number;
+    price_points: number;
 }
-export type UserProfileUpdatePayload = Partial<Pick<User, 'nickname' | 'ageGroup' | 'gender' | 'interests'>>;

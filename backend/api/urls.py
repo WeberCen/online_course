@@ -1,24 +1,28 @@
 # backend/api/urls.py
 from django.urls import path
-from .views import (UserRegisterView,UserSearchView,UserLoginView,UserProfileView,AvatarUpdateView,
-PasswordResetRequestView,PasswordResetConfirmView,
+from .views import (UserRegisterView,UserSearchView,UserLoginView,UserProfileView,
 ChangePhoneInitiateView, ChangePhoneVerifyNewView, ChangePhoneCommitView,
 ChangeEmailInitiateView, ChangeEmailVerifyNewView, ChangeEmailCommitView,
-CertificationSubmitView,EditorImageView,
+CertificationSubmitView,EditorImageView,PasswordResetConfirmView,PasswordResetRequestView,
 CourseListView, CourseDetailView,CourseCreateView,
 CourseCollectionView,CourseSubscriptionView,CourseProgressView,ExerciseSubmissionView,
-GalleryListView,GalleryDetailView,GalleryCollectionView,GalleryItemCreateView,
+GalleryListView,GalleryDetailView,GalleryCollectionView,
+GalleryItemCreateView,GalleryDownloadView,
 CommunityCreateView,CommunityListView,CommunityPostDetailView,
-CommunityPostListCreateView,CommunityReplyCreateView,
-CommunityPostDestroyView,CommunityPostLikeView,
+CommunityPostListView,CommunityPostCreateView,CommunityReplyCreateView,
+CommunityPostDestroyView,CommunityPostLikeView,CommunityDetailView,
 MessageThreadListCreateView,MessageThreadRetrieveDestroyView,
-MyCollectionsView,MySupportedView,MyCreationsView,MyParticipationsView)
+MyCollectionsView,MySupportedView,MyCreationsView,MyParticipationsView,
+CourseUpdateView,GalleryItemUpdateView,CommunityUpdateView)
 
+def community_post_view(request, *args, **kwargs):
+    if request.method == 'POST':
+        return CommunityPostCreateView.as_view()(request, *args, **kwargs)
+    return CommunityPostListView.as_view()(request, *args, **kwargs)
 
 urlpatterns = [
     path('auth/register/', UserRegisterView.as_view(), name='auth_register'),
     path('auth/login/', UserLoginView.as_view(), name='auth_login'),
-    path('auth/profile/avatar/', AvatarUpdateView.as_view(), name='auth_profile_avatar'),
     path('auth/profile', UserProfileView.as_view(), name='auth_profile_update'),
     path('auth/forgot-password/send-code/', PasswordResetRequestView.as_view(), name='password_reset_request'),
     path('auth/reset-password/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
@@ -38,10 +42,11 @@ urlpatterns = [
     path('courses/<int:course_pk>/chapters/<int:chapter_pk>/submit/', ExerciseSubmissionView.as_view(), name='exercise-submit'),
     path('gallery/works/', GalleryListView.as_view(), name='gallery-list'),
     path('gallery/works/<int:pk>/', GalleryDetailView.as_view(), name='gallery-detail'),
+    path('gallery/works/<int:pk>/download/', GalleryDownloadView.as_view(), name='gallery-download'),
     path('gallery/works/<int:pk>/collect/', GalleryCollectionView.as_view(), name='gallery-collect'),
     path('communities/', CommunityListView.as_view(), name='community-list'),
-    path('communities/<int:community_pk>/posts/', 
-         CommunityPostListCreateView.as_view(), name='community-post-list-create'),
+    path('communities/<int:pk>/', CommunityDetailView.as_view(), name='community-detail'),
+    path('communities/<int:community_pk>/posts/', community_post_view, name='community-post-list-create'),
     path('communities/<int:community_pk>/posts/<int:post_pk>/', 
          CommunityPostDetailView.as_view(), name='community-post-detail'),  
     path('posts/<int:pk>/', 
@@ -58,7 +63,10 @@ urlpatterns = [
     path('my/creations/', MyCreationsView.as_view(), name='my-creations'),
     path('my/participations/', MyParticipationsView.as_view(), name='my-participations'),
     path('my/profile/', UserProfileView.as_view(), name='my_profile'),
-    path('creator/communities/', CommunityCreateView.as_view(), name='community-create'),
     path('creator/courses/', CourseCreateView.as_view(), name='course-create'),
+    path('creator/courses/<int:pk>/', CourseUpdateView.as_view(), name='course-update'),
     path('creator/gallery/', GalleryItemCreateView.as_view(), name='gallery-create'),
+    path('creator/gallery/<int:pk>/', GalleryItemUpdateView.as_view(), name='gallery-update'),
+    path('creator/communities/<int:pk>/', CommunityUpdateView.as_view(), name='community-update'),
+    path('creator/communities/', CommunityCreateView.as_view(), name='community-create'),
     ]

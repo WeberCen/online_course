@@ -2,7 +2,7 @@
 import random
 import json
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework import generics, status,mixins,serializers
+from rest_framework import generics, status,serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from django.db.models import Count, Q
@@ -14,8 +14,8 @@ from rest_framework.decorators import action
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db.models import Prefetch, OuterRef, Subquery, Max
-from .permissions import CanPostOrReplyInCommunity, IsCreator
+from django.db.models import Prefetch, OuterRef, Subquery
+from .permissions import IsStudent,IsArtist,IsAdmin,IsOwner,IsPaidUsers
 from .tasks import send_verification_code_email
 from .serializers import (
     UserRegisterSerializer, UserProfileSerializer, UserSummarySerializer,UserLoginSerializer,
@@ -27,13 +27,13 @@ from .serializers import (
     GalleryListSerializer, GalleryDetailSerializer, CourseCreateSerializer,GalleryItemCreateSerializer,CommunityCreateSerializer,
     CommunityListSerializer, CommunityPostListSerializer, CommunityPostDetailSerializer,
     CommunityPostCreateSerializer,CommunityReplyCreateSerializer,
-    MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer,
+    CommunityDetailSerializer,MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer,
     MyCollectionsSerializer,MySupportedSerializer,MyCreationsSerializer,MyParticipationsSerializer)
 from .models import (CertificationRequest,Course,Chapter,
                      Subscription,Collection,Exercise,UserChapterCompletion,
                      GalleryItem,GalleryCollection,GalleryDownloadRecord,
                      Community,CommunityPost,CommunityReply,
-                     User,Tag,Message,MessageThread)
+                     User,Tag,Message,MessageThread,UserExerciseCompletion)
 
 
 User = get_user_model() # 获取当前项目使用的 User 模型
@@ -74,38 +74,18 @@ class UserLoginView(generics.GenericAPIView):
             'tokens': tokens
         }, status=status.HTTP_200_OK)
     
-class AvatarUpdateView(generics.UpdateAPIView):
+class UserProfileUpdateView(generics.UpdateAPIView):
     """
-    处理用户头像上传
+    处理用户资料更新上传
     """
-    # 这个视图只用于返回更新后的用户信息，核心逻辑在 update 方法中
     serializer_class = UserProfileSerializer 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStudent]
     # 指定解析器，以支持 multipart/form-data 格式的请求
     parser_classes = [MultiPartParser, FormParser]
 
     def get_object(self):
         return self.request.user
 
-    def put(self, request, *args, **kwargs):
-        user = self.get_object()
-        # 'avatarFile' 必须与前端/Postman 发送请求时使用的字段名一致
-        avatar_file = request.data.get('avatarFile') 
-
-        if not avatar_file:
-            return Response({"error": "No avatar file provided."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # 直接更新用户的 avatarUrl 字段
-        user.avatarUrl = avatar_file
-        user.save()
-
-        # 使用 UserProfileSerializer 序列化并返回更新后的用户数据
-        serializer = self.get_serializer(user)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    # 我们只允许 PUT 或 POST (在此视图中视为更新)，不允许 PATCH
-    def patch(self, request, *args, **kwargs):
-        return self.put(request, *args, **kwargs)
     
 class PasswordResetRequestView(generics.GenericAPIView):
     """
@@ -312,8 +292,8 @@ class CertificationSubmitView(generics.CreateAPIView):
     """
     queryset = CertificationRequest.objects.all()
     serializer_class = CertificationRequestSerializer
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser] # 支持文件上传
+    permission_classes = [IsAuthenticated, IsStudent]
+    parser_classes = [MultiPartParser, FormParser] 
 
     def perform_create(self, serializer):
         # 在创建对象时，自动将申请人设置为当前登录的用户
@@ -360,7 +340,10 @@ class CourseDetailView(generics.RetrieveAPIView):
     queryset = Course.objects.filter(status='published')
     serializer_class = CourseDetailSerializer
     authentication_classes = [JWTAuthentication] 
-    permission_classes = [AllowAny] 
+    permission_classes = [AllowAny]
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return queryset.select_related('author').prefetch_related('chapters', 'tags')
 
 class CourseSubscriptionView(generics.GenericAPIView):
     """
@@ -435,17 +418,14 @@ class CourseProgressView(generics.RetrieveAPIView):
     """
     获取用户在特定课程中的学习进度
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStudent]
+    #permission_classes = [AllowAny]
     queryset = Course.objects.all()
     serializer_class = CourseProgressSerializer
-
+        
     def get(self, request, *args, **kwargs):
         course = self.get_object()
         user = request.user
-        
-        # 检查用户是否已订阅该课程
-        if not Subscription.objects.filter(user=user, course=course).exists():
-            return Response({"error": "You must subscribe to this course to view progress."}, status=status.HTTP_403_FORBIDDEN)
 
         try:
             subscription = Subscription.objects.get(user=user, course=course)
@@ -455,27 +435,39 @@ class CourseProgressView(generics.RetrieveAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
            
-        total_chapters = course.chapters.count()
-        completed_chapter_ids = user.completed_chapters.filter(course=course).values_list('id', flat=True)
-        completed_chapters_count = UserChapterCompletion.objects.filter(
-            user=user, chapter__course=course
+        total_exercises = Exercise.objects.filter(chapter__course=course).count()
+        
+        completed_exercises_count = UserExerciseCompletion.objects.filter(
+            user=user, 
+            exercise__chapter__course=course
         ).count()
-        is_completed = total_chapters > 0 and completed_chapters_count == total_chapters
+
+        is_completed = total_exercises > 0 and completed_exercises_count == total_exercises
+
+        completed_chapter_ids = UserChapterCompletion.objects.filter(
+            user=user, chapter__course=course
+        ).values_list('chapter_id', flat=True)
+
         next_chapter_id = None
+        next_chapter_obj = None 
         if not is_completed:
             next_chapter = course.chapters.exclude(id__in=completed_chapter_ids).order_by('order').first()
             if next_chapter:
                 next_chapter_id = next_chapter.id
+                next_chapter_obj = next_chapter
+
         data = {
-            'completedChapters': completed_chapters_count,
-            'totalChapters': total_chapters,
+            'course': course, 
+            'completedExercises': completed_exercises_count, 
+            'totalExercises': total_exercises,               
             'isCompleted': is_completed,
             'subscribed_at': subscription.subscribed_at, 
             'last_updated_at': subscription.last_updated_at,
             'completed_at': subscription.completed_at,
             'nextChapterId': next_chapter_id, 
-            'nextChapterToComplete': None
+            'nextChapterToComplete': next_chapter_obj 
         }
+
         serializer = self.get_serializer(data)
         return Response(serializer.data)
 
@@ -483,11 +475,10 @@ class ExerciseSubmissionView(generics.GenericAPIView):
     """
     处理用户提交的章节练习答案
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStudent]
     serializer_class = ExerciseSubmissionSerializer
 
     def post(self, request, *args, **kwargs):
-        # 从 URL 中获取 course_pk 和 chapter_pk
         course_pk = self.kwargs.get('course_pk')
         chapter_pk = self.kwargs.get('chapter_pk')
 
@@ -498,7 +489,6 @@ class ExerciseSubmissionView(generics.GenericAPIView):
             return Response({"error": "Chapter or Course not found."}, status=status.HTTP_404_NOT_FOUND)
 
         user = request.user
-        # 检查用户是否已订阅
         if not Subscription.objects.filter(user=user, course=course).exists():
             return Response({"error": "You must be subscribed to this course to submit answers."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -507,35 +497,71 @@ class ExerciseSubmissionView(generics.GenericAPIView):
         submitted_answers = serializer.validated_data['answers']
         
         answers_map = {answer['exerciseId']: answer['userAnswer'] for answer in submitted_answers}
-        total_exercises = chapter.exercises.count()
-        correct_answers_count = 0
+        
+        exercise_ids_in_chapter = chapter.exercises.values_list('id', flat=True)
+        UserExerciseSubmission.objects.filter(user=user, exercise_id__in=exercise_ids_in_chapter).delete()
 
-        for exercise in chapter.exercises.all():
+        submissions_to_create = []
+        correct_answers_count = 0
+        exercises_in_chapter = chapter.exercises.prefetch_related('options', 'fill_in_blanks')
+
+        for exercise in exercises_in_chapter:
             user_answer = answers_map.get(exercise.id)
             if user_answer is None:
-                continue
+                continue # 如果用戶未提交某題答案，則跳過
 
-            # 根据题目类型进行不同方式的批改
+            is_correct = False # 預設為錯誤
+            
+            # 根據題目類型進行批改
             if exercise.type == 'multiple-choice':
-                correct_options_texts = set(exercise.options.filter(is_correct=True).values_list('text', flat=True))
+                correct_options_ids = set(exercise.options.filter(is_correct=True).values_list('id', flat=True))
+                # 假設 userAnswer 是選項 ID 的列表，例如 [2, 5]
                 user_answers_set = set(user_answer) if isinstance(user_answer, list) else set()
-                if correct_options_texts == user_answers_set:
-                    correct_answers_count += 1         
+                if correct_options_ids == user_answers_set:
+                    is_correct = True
+                    
             elif exercise.type == 'fill-in-the-blank':
-                correct_answers_list = [str(ans).strip() for ans in exercise.answer]
-                user_answer_str = str(user_answer).strip()
-                if user_answer_str in correct_answers_list:
-                    correct_answers_count += 1
+                # 假設一題只有一個填空，或者前端會將多個填空答案合併提交
+                blank_answer_obj = exercise.fill_in_blanks.order_by('index_number').first()
+                if blank_answer_obj:
+                    correct_answer = blank_answer_obj.correct_answer
+                    user_answer_str = str(user_answer).strip()
+                    
+                    if blank_answer_obj.case_sensitive:
+                        if user_answer_str == correct_answer:
+                            is_correct = True
+                    else:
+                        if user_answer_str.lower() == correct_answer.lower():
+                            is_correct = True
+            
+            if is_correct:
+                correct_answers_count += 1
 
+            # 準備要創建的 UserExerciseSubmission 物件
+            submissions_to_create.append(
+                UserExerciseSubmission(
+                    user=user,
+                    exercise=exercise,
+                    submitted_answer=user_answer,
+                    is_correct=is_correct
+                )
+            )
+
+        # --- 4. 高效地將所有提交記錄一次性寫入數據庫 ---
+        if submissions_to_create:
+            UserExerciseSubmission.objects.bulk_create(submissions_to_create)
+
+        # --- 5. 計算分數並更新章節完成狀態 (邏輯微調) ---
+        total_exercises = exercises_in_chapter.count()
         score = (correct_answers_count / total_exercises * 100) if total_exercises > 0 else 0
         is_passed = score >= 80
 
         if is_passed:
             UserChapterCompletion.objects.get_or_create(user=user, chapter=chapter)
 
-        # --- 计算并返回最新进度 ---
+        # --- 6. 計算並返回最新進度 (保持不變) ---
         total_chapters = course.chapters.count()
-        completed_chapters_count = user.completed_chapters.filter(course=course).count()
+        completed_chapters_count = UserChapterCompletion.objects.filter(user=user, chapter__course=course).count()
         is_completed = total_chapters > 0 and completed_chapters_count == total_chapters
 
         new_progress_data = {
@@ -543,14 +569,14 @@ class ExerciseSubmissionView(generics.GenericAPIView):
             'totalChapters': total_chapters,
             'isCompleted': is_completed,
         }
-
-        # 构造最终返回的数据
+        
         response_data = {
             'score': round(score),
             'isPassed': is_passed,
-            'newProgress': new_progress_data
+            'newProgress': new_progress_data,
+            'correctCount': correct_answers_count,
+            'totalCount': total_exercises
         }
-
         return Response(response_data, status=status.HTTP_200_OK)
     
 # ===============================================
@@ -565,23 +591,27 @@ class GalleryListView(generics.ListAPIView):
     serializer_class = GalleryListSerializer
     permission_classes = [AllowAny] # 公开接口，允许任何人访问
 
-class GalleryDetailView(mixins.RetrieveModelMixin, generics.GenericAPIView):
+class GalleryDetailView(generics.RetrieveAPIView):
     """
-    获取单个作品详情 (GET) 或处理下载请求 (POST)
+    獲取單個已發佈作品的詳情 (僅處理 GET 請求)
     """
     queryset = GalleryItem.objects.filter(status='published')
     serializer_class = GalleryDetailSerializer
     permission_classes = [AllowAny]
 
-    def get(self, request, *args, **kwargs):
-        """处理 GET 请求，返回作品详情"""
-        return self.retrieve(request, *args, **kwargs)
+class GalleryDownloadView(generics.GenericAPIView):
+    """
+    處理作品的下載請求 (僅處理 POST 請求)
+    """
+    queryset = GalleryItem.objects.filter(status='published')
+    serializer_class = GalleryDetailSerializer 
+    permission_classes = [IsAuthenticated, IsStudent] 
 
     def post(self, request, *args, **kwargs):
-        """处理 POST 请求，用于下载 (最终健壮版)"""
-        if not request.user.is_authenticated:
-            return Response({"error": "Please log in to download."}, status=status.HTTP_401_UNAUTHORIZED)
-        
+        """
+        處理 POST 請求，執行下載邏輯
+        """
+        # 這裡的邏輯與您原始的 post 方法完全相同
         work = self.get_object()
         user = request.user
         confirm_deduction = request.data.get('confirmDeduction', False)
@@ -589,7 +619,7 @@ class GalleryDetailView(mixins.RetrieveModelMixin, generics.GenericAPIView):
         if not work.workFile:
             return Response({"error": "Work file is not available for this item."}, status=status.HTTP_404_NOT_FOUND)
 
-        # 检查前置条件，并返回带标题的错误
+        # 檢查前置作品是否已下載
         if work.prerequisiteWork and not GalleryDownloadRecord.objects.filter(user=user, gallery_item=work.prerequisiteWork).exists():
             return Response({
                 "prerequisiteNotMet": True,
@@ -601,30 +631,36 @@ class GalleryDetailView(mixins.RetrieveModelMixin, generics.GenericAPIView):
         
         is_redownload = GalleryDownloadRecord.objects.filter(user=user, gallery_item=work).exists()
         
+        # 如果是重新下載或免費，直接返回 URL
         if is_redownload or work.requiredPoints == 0:
             return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
         
+        # 檢查積分是否足夠
         if user.currentPoints < work.requiredPoints:
             return Response({"error": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
 
+        # 檢查是否需要用戶二次確認
         if not confirm_deduction:
             return Response({
                 "confirmationRequired": True,
                 "pointsToDeduct": work.requiredPoints
             }, status=status.HTTP_409_CONFLICT)
         
+        # 執行扣分和創建下載記錄
         user.currentPoints -= work.requiredPoints
         user.save()
         GalleryDownloadRecord.objects.create(user=user, gallery_item=work, points_spent=work.requiredPoints)
         
-        return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
+        # 返回下載 URL
+        return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)}) 
 
 class GalleryCollectionView(generics.GenericAPIView):
     """
     处理画廊作品的收藏与取消收藏
     """
-    permission_classes = [IsAuthenticated]
-    queryset = GalleryItem.objects.all()
+    queryset = GalleryItem.objects.filter(status='published')
+    permission_classes = [IsAuthenticated, IsStudent]
+    serializer_class = GalleryDetailSerializer 
 
     def post(self, request, *args, **kwargs):
         """收藏作品"""
@@ -657,38 +693,53 @@ class CommunityListView(generics.ListAPIView):
     serializer_class = CommunityListSerializer
     permission_classes = [AllowAny] # 公开接口
 
-class CommunityPostListCreateView(generics.ListCreateAPIView):
+class CommunityPostListView(generics.ListAPIView):
     """
-    【第二级】获取帖子列表 (GET) 或创建新帖子 (POST)
+    【第二級】獲取指定社群下的帖子列表 (僅處理 GET)
     """
-    #permission_classes = [AllowAny] # GET 请求允许任何人
-    def get_permissions(self):
-        if self.request.method == 'POST':
-            return [IsAuthenticated(), CanPostOrReplyInCommunity()]
-        return [AllowAny()]
-    
-    def get_serializer_class(self):
-        if self.request.method == 'POST':
-            return CommunityPostCreateSerializer
-        return CommunityPostListSerializer
+    queryset = Community.objects.all().order_by('-created_at')
+    permission_classes = [AllowAny]
+    serializer_class = CommunityPostListSerializer
 
     def get_queryset(self):
-        if self.request.method == 'GET':
-            community_pk = self.kwargs.get('community_pk')
-            return CommunityPost.objects.filter(community_id=community_pk, status='published').order_by('-created_at')
-        return super().get_queryset()
+        """
+        過濾並返回指定社群下的已發佈帖子。
+        """
+        community_pk = self.kwargs.get('community_pk')
+        return CommunityPost.objects.filter(
+            community_id=community_pk, 
+            status='published'
+        ).order_by('-created_at')
     
+class CommunityPostCreateView(generics.CreateAPIView):
+    """
+    【第二級】在指定社群下創建一個新帖子 (僅處理 POST)
+    """
+    # 權限清晰：直接設為必須登入
+    queryset = Community.objects.all().order_by('-created_at')
+    permission_classes = [IsAuthenticated, IsStudent, IsPaidUsers]
+    serializer_class = CommunityPostCreateSerializer
+
     def perform_create(self, serializer):
+        """
+        執行創建帖子的核心業務邏輯。
+        """
         user = self.request.user
+        
+        # 檢查用戶是否被禁言
         if user.accountStatus == 'suspended':
             raise serializers.ValidationError({"error": "您的账户已被禁言，无法发布帖子。"})
+            
         community = get_object_or_404(Community, pk=self.kwargs.get('community_pk'))
         reward_points = serializer.validated_data.get('rewardPoints', 0)
+        
+        # 處理懸賞積分
         if reward_points > 0:
             if user.currentPoints < reward_points:
                 raise serializers.ValidationError({"error": "您的积分不足以支付悬赏。"})
             user.currentPoints -= reward_points
             user.save(update_fields=['currentPoints'])
+            
         serializer.save(author=user, community=community)
 
 class CommunityPostDetailView(generics.RetrieveAPIView):
@@ -696,7 +747,7 @@ class CommunityPostDetailView(generics.RetrieveAPIView):
     【第三级】获取单个帖子的详情（包含所有回复）
     """
     serializer_class = CommunityPostDetailSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated, IsStudent]
     lookup_url_kwarg = 'post_pk' 
 
     def get_queryset(self):
@@ -709,16 +760,16 @@ class CommunityPostDetailView(generics.RetrieveAPIView):
 
 class CommunityPostDestroyView(generics.DestroyAPIView):
     """删除当前用户自己的帖子"""
-    queryset = CommunityPost.objects.all()
-    permission_classes = [IsAuthenticated]
+    queryset = CommunityPost.objects.all().order_by('-created_at')
+    permission_classes = [IsOwner]
 
     def get_queryset(self):
         return super().get_queryset().filter(author=self.request.user)
 
 class CommunityPostLikeView(generics.GenericAPIView):
     """点赞/取消点赞一个帖子"""
-    queryset = CommunityPost.objects.all()
-    permission_classes = [IsAuthenticated]
+    queryset = CommunityPost.objects.all().order_by('-created_at')
+    permission_classes = [IsAuthenticated, IsStudent]
 
     def post(self, request, *args, **kwargs):
         post = self.get_object()
@@ -732,9 +783,9 @@ class CommunityPostLikeView(generics.GenericAPIView):
 
 class CommunityReplyCreateView(generics.CreateAPIView):
     """为指定帖子创建新回复"""
-    queryset = CommunityReply.objects.all()
+    queryset = CommunityReply.objects.all().order_by('-created_at')
     serializer_class = CommunityReplyCreateSerializer
-    permission_classes = [IsAuthenticated,CanPostOrReplyInCommunity]
+    permission_classes = [IsAuthenticated, IsStudent]
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -748,13 +799,21 @@ class CommunityCreateView(generics.CreateAPIView):
     POST /creator/communities/
     允许创作者创建新的社群板块
     """
-    queryset = Community.objects.all()
+    queryset = Community.objects.all().order_by('-created_at')
     serializer_class = CommunityCreateSerializer
-    permission_classes = [IsAuthenticated, IsCreator] # <-- 应用创作者权限
+    permission_classes = [IsAuthenticated, IsArtist] 
 
     def perform_create(self, serializer):
         # 自动将创始人设置为当前用户
         serializer.save(founder=self.request.user)
+class CommunityDetailView(generics.RetrieveAPIView):
+    """
+    GET /communities/{pk}/
+    获取单个社群板块的详情（主要用于编辑页加载数据）
+    """
+    queryset = Community.objects.all()
+    serializer_class = CommunityDetailSerializer
+    permission_classes = [IsAuthenticated, IsArtist] # 允许任何人查看，权限由编辑页的 PUT 接口控制
 
 # ===============================================
 # =======          管理员模块视图          =======
@@ -1025,8 +1084,11 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         return self.request.user
     def post(self, request, *args, **kwargs):
-        return self.update(request, *args, **kwargs)
-    
+        return self.update(request, *args, **kwargs) 
+
+# ===============================================
+# =======    创作者工作台 -    =======
+# ===============================================
 class CourseCreateView(generics.CreateAPIView):
     """
     POST /creator/courses/
@@ -1034,7 +1096,7 @@ class CourseCreateView(generics.CreateAPIView):
     """
     queryset = Course.objects.all()
     serializer_class = CourseCreateSerializer 
-    permission_classes = [IsAuthenticated, IsCreator]
+    permission_classes = [IsAuthenticated, IsArtist]
     parser_classes = [MultiPartParser, FormParser] # 支持封面图上传
 
     def perform_create(self, serializer):
@@ -1043,7 +1105,7 @@ class CourseCreateView(generics.CreateAPIView):
 class GalleryItemCreateView(generics.CreateAPIView):
     queryset = GalleryItem.objects.all()
     serializer_class = GalleryItemCreateSerializer
-    permission_classes = [IsAuthenticated, IsCreator] 
+    permission_classes = [IsAuthenticated, IsArtist] 
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
@@ -1051,8 +1113,46 @@ class GalleryItemCreateView(generics.CreateAPIView):
 class CommunityCreateView(generics.CreateAPIView):
     queryset = Community.objects.all()
     serializer_class = CommunityCreateSerializer
-    permission_classes = [IsAuthenticated, IsCreator]
+    permission_classes = [IsAuthenticated, IsArtist]
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
         serializer.save(founder=self.request.user)
+class CourseUpdateView(generics.UpdateAPIView):
+    """
+    PUT /creator/courses/{pk}/
+    允许创作者编辑自己的课程。
+    """
+    queryset = Course.objects.all()
+    serializer_class = CourseCreateSerializer # 复用创建时的序列化器
+    permission_classes = [IsAuthenticated, IsArtist, IsOwner]
+    parser_classes = [MultiPartParser, FormParser] 
+
+    def perform_update(self, serializer):
+        serializer.save(status='draft')
+
+class GalleryItemUpdateView(generics.UpdateAPIView):
+    """
+    PUT /creator/gallery/{pk}/
+    允许创作者编辑自己的画廊作品。
+    """
+    queryset = GalleryItem.objects.all()
+    serializer_class = GalleryItemCreateSerializer
+    permission_classes = [IsAuthenticated, IsArtist, IsOwner]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_update(self, serializer):
+        serializer.save(status='draft')
+
+class CommunityUpdateView(generics.UpdateAPIView):
+    """
+    PUT /creator/communities/{pk}/
+    允许创作者编辑自己创建的社群。
+    """
+    queryset = Community.objects.all()
+    serializer_class = CommunityCreateSerializer
+    permission_classes = [IsAuthenticated, IsArtist, IsOwner]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def perform_update(self, serializer):
+        serializer.save()

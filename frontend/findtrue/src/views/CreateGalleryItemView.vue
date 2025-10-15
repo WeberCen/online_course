@@ -1,62 +1,91 @@
 <template>
-  <div class="create-gallery-item-view">
-    <h2>创建新作品</h2>
+  <div class="create-view-container">
+    <h2>{{ isEditMode ? '编辑作品' : '上传新作品' }}</h2>
     <form @submit.prevent="submitForm">
-      <button type="submit" :disabled="isSubmitting">{{ isSubmitting ? '提交中...' : '提交审核' }}</button>
-      <div class="form-gallery-item">
-        <label for="name">作品名称</label>
-        <input type="text" id="name" v-model="itemData.title" required>
+      <div class="form-group">
+        <label for="title">作品名称</label>
+        <input type="text" id="title" v-model="itemData.title" required>
       </div>
-      <div class="form-gallery-item">
+
+      <div class="form-group">
         <label for="description">作品描述</label>
-        <RichTextEditor id="description" v-model="itemData.description" rows="5"></RichTextEditor>
+        <p class="field-help">您可以使用富文本编辑器来详细介绍您的作品。</p>
+        <RichTextEditor v-model="itemData.description" />
       </div>
-       <div class="form-gallery-item">
+
+      <div class="form-group">
         <label for="coverImage">作品封面图片</label>
-        <input type="file" id="coverImage" @change="handleCoverImageChange">
+        <input type="file" id="coverImage" @change="handleCoverImageChange" accept="image/*">
+        </div>
+
+      <div class="form-group">
+        <label for="workFile">作品文件 (例如 .zip, .rar)</label>
+        <input type="file" id="workFile" @change="handleWorkFileChange" :required="!isEditMode">
+        <p v-if="isEditMode" class="field-help">注意：如需更新作品文件，请上传新文件。否则将保留原文件。</p>
       </div>
-       <div class="form-gallery-item">
-        <label for="workFile">作品文件</label>
-        <input type="file" id="workFile" @change="handleWorkFileChange">
-      </div>
+
       <div class="form-group">
         <label for="version">版本号</label>
         <input type="text" id="version" v-model="itemData.version" required placeholder="例如: 1.0">
       </div>
+
        <div class="form-group">
         <label for="requiredPoints">所需积分</label>
         <input type="number" id="requiredPoints" v-model.number="itemData.requiredPoints" min="0">
       </div>
+
       <div class="form-group checkbox-group">
         <input type="checkbox" id="is_vip_free" v-model="itemData.is_vip_free">
-        <label for="is_vip_free">VIP 免费</label>
+        <label for="is_vip_free">此作品对 VIP 免费</label>
       </div>
+      
       <div v-if="error" class="error">{{ error }}</div>
-      <button type="submit" :disabled="isSubmitting">{{ isSubmitting ? '提交中...' : '提交审核' }}</button>
+      <button type="submit" :disabled="isSubmitting">{{ isSubmitting ? '保存中...' : (isEditMode ? '保存修改' : '提交审核') }}</button>
     </form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { createGalleryItem } from '@/services/apiService';
+import { reactive, ref, onMounted, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { createGalleryItem, updateGalleryItem, getGalleryWorkDetail } from '@/services/apiService';
 import { isAxiosError } from 'axios';
 import RichTextEditor from '@/components/RichTextEditor.vue';
 
 const router = useRouter();
+const route = useRoute();
+
+const itemId = computed(() => route.params.id as string | undefined);
+const isEditMode = computed(() => !!itemId.value);
+
 const itemData = reactive({
   title: '',
   description: '',
-  coverImage: null as String | File | null,
-  workFile: null as String | File | null,
+  coverImage: null as File | null,
+  workFile: null as File | null,
   version: '1.0',
   requiredPoints: 0,
   is_vip_free: false,
-  tags:[],
 });
 const isSubmitting = ref(false);
 const error = ref<string | null>(null);
+
+onMounted(async () => {
+  if (isEditMode.value && itemId.value) {
+    try {
+      const response = await getGalleryWorkDetail(itemId.value);
+      const { title, description, version, requiredPoints, is_vip_free } = response.data;
+      itemData.title = title;
+      itemData.description = description;
+      itemData.version = version;
+      itemData.requiredPoints = requiredPoints;
+      itemData.is_vip_free = is_vip_free;
+    } catch (err) {
+      error.value = "无法加载作品数据进行编辑。";
+      console.error(err);
+    }
+  }
+});
 
 const handleCoverImageChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -66,37 +95,21 @@ const handleCoverImageChange = (event: Event) => {
     itemData.coverImage = null;
   }
 };
+
 const handleWorkFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  if (target.files && target.files.length > 0) {
-    itemData.workFile = target.files[0]!;
+  if ( target.files && target.files.length > 0) {
+  itemData.workFile = target.files[0] !;
   } else {
     itemData.workFile = null;
   }
 };
 
 const submitForm = async () => {
-    if (!itemData.workFile) {
-        alert("请务必上传作品文件。");
-        return;
-    }
-    if (!itemData.tags.length) {
-        alert("请添加至少一个标签。");
-        return;
-    }
-    if (!itemData.description) {
-        alert("请添加作品描述。");
-        return;
-    }
-    if (!itemData.title) {
-        alert("请添加作品名称。");
-        return;
-    }
-    if (!itemData.requiredPoints) {
-        alert("请添加所需积分。");
-        return;
-    }
-
+  if (!isEditMode.value && !itemData.workFile) {
+    alert("创建新作品时，必须上传作品文件。");
+    return;
+  }
   isSubmitting.value = true;
   error.value = null;
 
@@ -106,32 +119,30 @@ const submitForm = async () => {
   formData.append('version', itemData.version);
   formData.append('requiredPoints', String(itemData.requiredPoints));
   formData.append('is_vip_free', String(itemData.is_vip_free));
-  formData.append('tags', itemData.tags.join(','));
-  if (itemData.workFile instanceof File) {
-        // 情况 1: 用户上传了新的文件
-        formData.append('workFile', itemData.workFile);
-    } else if (typeof itemData.workFile === 'string' && itemData.workFile) {
-        // 情况 2: 变量中存储的是已有的文件 URL 字符串
-        formData.append('workFileUrl', itemData.workFile); // 注意：这里使用了 workFileUrl
-    }
-  if (itemData.coverImage instanceof File) {
-        // 情况 1: 用户上传了新的封面文件
-        formData.append('coverImage', itemData.coverImage);
-    } else if (typeof itemData.coverImage === 'string' && itemData.coverImage) {
-        // 情况 2: 变量中存储的是已有的封面 URL 字符串
-        formData.append('coverImageUrl', itemData.coverImage); // 注意：这里使用了 coverImageUrl
-    }
+  
+  if (itemData.workFile) {
+    formData.append('workFile', itemData.workFile);
+  }
+  if (itemData.coverImage) {
+    formData.append('coverImage', itemData.coverImage);
+  }
 
   try {
-    const response = await createGalleryItem(formData);
-    alert('作品创建成功！');
-    router.push({ name: 'gallery-item-posts-list', params: { galleryItemId: response.data.id } });
-  } catch (err) {
-    console.error("创建失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "抱歉，只有创作作者才能创建作品。";
+    let response;
+    if (isEditMode.value && itemId.value) {
+      response = await updateGalleryItem(itemId.value, formData);
+      alert('作品更新成功，已重新提交审核！');
     } else {
-      error.value = '创建失败，请检查您的输入。';
+      response = await createGalleryItem(formData);
+      alert('作品上传成功，已提交审核！');
+    }
+    router.push({ name: 'gallery-detail', params: { id: response.data.id } });
+  } catch (err) {
+    console.error("操作失败:", err);
+    if (isAxiosError(err) && err.response?.status === 403) {
+      error.value = "抱歉，只有创作者才能执行此操作。";
+    } else {
+      error.value = '操作失败，请检查您的输入。';
     }
   } finally {
     isSubmitting.value = false;
@@ -140,12 +151,14 @@ const submitForm = async () => {
 </script>
 
 <style scoped>
-section { margin-bottom: 2.5rem; }
-h3 { margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
-.item-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
-.item-card { border: 1px solid #eee; padding: 1rem; border-radius: 4px; transition: background-color 0.2s; }
-.item-card:hover { background-color: #f9f9f9; }
-.item-card a { text-decoration: none; color: inherit; }
-.item-card h4 { margin: 0 0 0.5rem 0; }
-.loading, .error, .empty-message { color: #888; margin-top: 1rem; }
+.create-view-container { max-width: 800px; margin: 2rem auto; }
+.form-group { margin-bottom: 1.5rem; }
+.form-group label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+.form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; box-sizing: border-box; }
+.checkbox-group { display: flex; align-items: center; }
+.checkbox-group input { width: auto; margin-right: 0.5rem; }
+.field-help { font-size: 0.8rem; color: #666; margin-top: 0.2rem; }
+button { padding: 10px 20px; border: none; background-color: #007bff; color: white; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+button:disabled { background-color: #a0cffc; }
+.error { color: red; margin-bottom: 1rem; }
 </style>

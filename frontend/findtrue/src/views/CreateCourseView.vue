@@ -1,52 +1,82 @@
 <template>
-  <div class="create-course-view">
-    <h2>创建新课程</h2>
+  <div class="create-view-container">
+    <h2>{{ isEditMode ? '编辑课程' : '创建新课程' }}</h2>
     <form @submit.prevent="submitForm">
       <div class="form-group">
         <label for="title">课程名称</label>
         <input type="text" id="title" v-model="courseData.title" required>
       </div>
+
       <div class="form-group">
         <label for="description">课程描述</label>
-        <RichTextEditor id="description" v-model="courseData.description" rows="5"></RichTextEditor>
+        <RichTextEditor v-model="courseData.description" />
       </div>
+
       <div class="form-group">
         <label for="coverImage">课程封面图片</label>
         <input type="file" id="coverImage" @change="handleFileChange" accept="image/*">
       </div>
+
       <div class="form-group">
         <label for="pricePoints">所需积分</label>
         <input type="number" id="pricePoints" v-model.number="courseData.pricePoints" min="0">
       </div>
+
       <div class="form-group checkbox-group">
         <input type="checkbox" id="is_vip_free" v-model="courseData.is_vip_free">
-        <label for="is_vip_free">VIP 免费</label>
+        <label for="is_vip_free">此课程对 VIP 免费</label>
       </div>
       
       <div v-if="error" class="error">{{ error }}</div>
-      <button type="submit" :disabled="isSubmitting">{{ isSubmitting ? '创建中...' : '创建课程' }}</button>
+      <button type="submit" :disabled="isSubmitting">{{ isSubmitting ? '保存中...' : (isEditMode ? '保存修改' : '创建课程') }}</button>
     </form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { createCourse } from '@/services/apiService';
+import { reactive, ref, onMounted, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { createCourse, updateCourse, getCourseDetail } from '@/services/apiService';
 import { isAxiosError } from 'axios';
 import RichTextEditor from '@/components/RichTextEditor.vue';
 
 const router = useRouter();
+const route = useRoute();
+
+// --- 智能表单的核心逻辑 ---
+const courseId = computed(() => route.params.id as string | undefined);
+const isEditMode = computed(() => !!courseId.value);
+
 const courseData = reactive({
   title: '',
   description: '',
-  coverImage: null as String | File | null,
+  coverImage: null as File | null,
   pricePoints: 0,
   is_vip_free: false,
-  tags:[]
 });
 const isSubmitting = ref(false);
 const error = ref<string | null>(null);
+
+onMounted(async () => {
+  if (isEditMode.value && courseId.value) { // 如果是编辑模式...
+    try {
+      const response = await getCourseDetail(courseId.value); // ...就去后端获取课程数据
+      // 将获取到的数据，填充到我们的表单中
+      const { title, description, pricePoints, is_vip_free } = response.data;
+      courseData.title = title;
+      courseData.description = description;
+      courseData.pricePoints = pricePoints;
+      courseData.is_vip_free = is_vip_free;
+    } catch (err) {
+    console.error("读取失败:", err);
+    if (isAxiosError(err) && err.response?.status === 403) {
+      error.value = "读取课程数据失败，请稍后再试。";
+    } else {
+      error.value = '读取课程数据失败，请检查您的输入。';
+    }
+  }
+  }
+});
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
@@ -60,41 +90,25 @@ const handleFileChange = (event: Event) => {
 const submitForm = async () => {
   isSubmitting.value = true;
   error.value = null;
-  if (!courseData.tags.length) {
-    error.value = "请添加至少一个标签。";
-    isSubmitting.value = false;
-    return;
-  }
-  if (!courseData.description) {
-    error.value = "请添加课程描述。";
-    isSubmitting.value = false;
-    return;
-  }
-  if (!courseData.title) {
-    error.value = "请添加课程名称。";
-    isSubmitting.value = false;
-    return;
-  }
-  if (!courseData.pricePoints) {
-    error.value = "请添加所需积分。";
-    isSubmitting.value = false;
-    return;
-  }
-
   const formData = new FormData();
   formData.append('title', courseData.title);
   formData.append('description', courseData.description);
   formData.append('pricePoints', String(courseData.pricePoints));
   formData.append('is_vip_free', String(courseData.is_vip_free));
-  if (courseData.coverImage instanceof File) {
-        formData.append('coverImage', courseData.coverImage);
-    } else if (typeof courseData.coverImage === 'string' && courseData.coverImage) {
-        formData.append('coverImageUrl', courseData.coverImage); 
-    }
+  if (courseData.coverImage) {
+    formData.append('coverImage', courseData.coverImage);
+  }
 
   try {
-    const response = await createCourse(formData);
-    alert('课程创建成功！初始状态为草稿，请在后台继续编辑章节并提交审核。');
+    let response;
+    if (isEditMode.value && courseId.value) {
+      response = await updateCourse(courseId.value, formData);
+      alert('课程更新成功，已重新提交审核！');
+    } else {
+      // 创建模式：调用 create API
+      response = await createCourse(formData);
+      alert('课程创建成功！');
+    }
     router.push({ name: 'course-detail', params: { id: response.data.id } });
   } catch (err) {
     console.error("创建失败:", err);
