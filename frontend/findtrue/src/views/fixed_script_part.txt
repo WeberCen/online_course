@@ -1,0 +1,44 @@
+﻿所在位置 行:2 字符: 13
++ import { ref, onMounted } from 'vue';
++             ~
+参数列表中缺少参量。
+所在位置 行:4 字符: 25
++ import { getCourseDetail, getCourseProgress, submitChapterExercises,  ...
++                         ~
+参数列表中缺少参量。
+所在位置 行:6 字符: 35
++ import type { EnhancedCourseDetail, ExerciseAnswer } from '@/types/co ...
++                                   ~
+参数列表中缺少参量。
+所在位置 行:8 字符: 24
++ const route = useRoute();
++                        ~
+“(”后面应为表达式。
+所在位置 行:27 字符: 30
++ const fetchPageData = async () => {
++                              ~
+“(”后面应为表达式。
+所在位置 行:39 字符: 45
++     if (localStorage.getItem('accessToken') && course.value?.is_subsc ...
++                                             ~~
+标记“&&”不是此版本中的有效语句分隔符。
+所在位置 行:43 字符: 14
++       } catch (progressError) {
++              ~
+Catch 块缺少自己的语句块。
+所在位置 行:43 字符: 31
++       } catch (progressError) {
++                               ~
+表达式或语句中包含意外的标记“{”。
+所在位置 行:48 字符: 10
++   } catch (err: unknown) {
++          ~
+Catch 块缺少自己的语句块。
+所在位置 行:48 字符: 26
++   } catch (err: unknown) {
++                          ~
+表达式或语句中包含意外的标记“{”。
+并未报告所有分析错误。请更正报告的错误并重试。
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingArgument
+ 

@@ -287,9 +287,9 @@ class CourseAdmin(RichTextAdminMixin, VersionAdmin):
     )
     inlines = [ChapterInline]
     filter_horizontal = ('tags',)
-    readonly_fields = ('title', 'description', 'author', 'pricePoints', 'coverImage','created_at', 'updated_at') 
-    def has_add_permission(self, request, obj=None):
-        return False
+    readonly_fields = ( 'author','created_at', 'updated_at') 
+    #def has_add_permission(self, request, obj=None):
+        #return False
     def chapter_count(self, obj):
         return obj.chapters.count()
     chapter_count.short_description = '章节数'
@@ -440,8 +440,8 @@ class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin):
         'requiredPoints', 'prerequisiteWork', 'version', 
         'rating', 'estimated_download_time_formatted', 'created_at', 'updated_at'
     )
-    def has_add_permission(self, request, obj=None):
-        return False
+    #def has_add_permission(self, request, obj=None):
+        #return False
     # 自定义函数，用于计算并链接到下载记录
     def download_count(self, obj):
         count = obj.downloaders.count()
@@ -543,8 +543,8 @@ class CommunityAdmin(RichTextAdminMixin, admin.ModelAdmin):
         'related_course', 'related_gallery_item', 'post_count', 
         'created_at', 'updated_at'
     )
-    def has_add_permission(self, request):
-        return False
+    #def has_add_permission(self, request):
+        #return False
     def member_count(self, obj):
         return obj.members.count()
     member_count.short_description = '成员人数'

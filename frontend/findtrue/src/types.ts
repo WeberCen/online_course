@@ -1,5 +1,17 @@
 // frontend/findtrue/src/types.ts
 
+
+
+// ===============================================
+// =======          响应类型定义          =======
+// ===============================================
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 // ===============================================
 // =======          核心基础类型          =======
 // ===============================================
@@ -34,6 +46,42 @@ export interface User {
 
 export type UserProfileUpdatePayload = Partial<Pick<User, 'nickname' | 'ageGroup' | 'gender' | 'interests' | 'bio'>>;
 
+
+// ===============================================
+// =======          认证模块类型          =======
+// ===============================================
+export interface LoginResponse {
+  token: string;
+  refreshToken: string;
+  user: User;
+}
+
+export interface RegisterData {
+  username: string;
+  email: string;
+  phone: string;
+  password: string;
+  password2: string;
+  code?: string;
+}
+
+export interface LoginData {
+  username?: string;
+  email?: string;
+  phone?: string;
+  password: string;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+}
+
+export interface PasswordResetConfirm {
+  email: string;
+  code: string;
+  password: string;
+  password2: string;
+}
 
 
 // ===============================================
@@ -85,8 +133,8 @@ export interface Exercise {
 export interface Progress {
   completedChapters: number;
   totalChapters: number;
-  isCompleted: boolean;
-  nextChapterId: number | null;
+  progress_percentage: number;
+  next_chapter_id?: number | null; // 可选，因为课程可能已全部完成
 }
 
 export interface SubmissionResult {
@@ -228,4 +276,68 @@ export interface VipPlan {
     name: string;
     duration_days: number;
     price_points: number;
+}
+
+// ===============================================
+// =======          认证相关类型          =======
+// ===============================================
+export interface LoginResponse {
+  token: string;
+  refreshToken: string;
+  user: User;
+}
+
+export interface LoginData {
+  username?: string;
+  email?: string;
+  phone?: string;
+  password: string;
+}
+
+export interface RegisterData {
+  username: string;
+  email: string;
+  phone: string;
+  password: string;
+  password2: string;
+  code?: string;
+}
+
+export interface PasswordResetRequest {
+  email: string;
+}
+
+export interface PasswordResetConfirm {
+  email: string;
+  code: string;
+  password: string;
+  password2: string;
+}
+
+// ===============================================
+// =======          操作响应类型          =======
+// ===============================================
+export interface OperationResponse {
+  success: boolean;
+  message?: string;
+  [key: string]: boolean | string | number | object | undefined;
+}
+
+// 定义Axios错误响应的详细类型
+export interface AxiosErrorResponse {
+  detail?: string;
+  error?: string;
+  message?: string;
+  [key: string]: boolean | string | number | object | undefined;   
+}
+
+// 自定义Axios错误类型，不直接继承AxiosError以避免类型冲突
+export interface CustomAxiosError {
+  response?: {
+    data?: AxiosErrorResponse;
+    status?: number;
+  };
+  request?: unknown;
+  message?: string;
+  [key: string]: unknown;
 }

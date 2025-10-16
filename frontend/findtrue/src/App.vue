@@ -1,10 +1,11 @@
 <template>
-  <header>
-    <nav>
+  <header class="main-header">
+    <nav class="main-nav">
       <router-link to="/courses">课程</router-link>
       <router-link to="/gallery">画廊</router-link>
       <router-link to="/communities">社群</router-link>
-       <router-link :to="{ name: 'my-collections' }">个人中心</router-link>
+      <router-link to="/login">登录</router-link>
+      <router-link :to="{ name: 'my-collections' }">个人中心</router-link>
     </nav>
   </header>
   

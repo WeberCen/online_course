@@ -20,7 +20,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # --- 新增以下代码块，用于读取 .env 文件 ---
 env = Env()
+#Env.read_env(BASE_DIR.parent / '.env')
+
 Env.read_env(os.path.join(BASE_DIR, '.env'))
+print("\n================== SETTINGS DEBUG START ==================")
+# 讓 env 自己說出它讀到的 DATABASE_URL 是什麼
+print(f"從 .env 檔案讀取到的 DATABASE_URL 是: {env.str('DATABASE_URL', default='!!! 未找到 !!!')}")
+print("=================== SETTINGS DEBUG END ===================\n")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/

@@ -17,9 +17,9 @@
       </div>
 
       <div v-if="course.is_subscribed && progress" class="progress-bar">
-        <h3>学习进度: {{ progress.completedChapters }} / {{ progress.totalChapters }}</h3>
-        <progress :value="progress.completedChapters" :max="progress.totalChapters"></progress>
-        <a v-if="progress.nextChapterId" :href="`#chapter-${progress.nextChapterId}`" class="resume-button">
+        <h3>学习进度: {{ progress.completed_exercises }} / {{ progress.total_exercises }} ({{ progress.progress_percentage }}%)</h3>
+        <progress :value="progress.completed_exercises" :max="progress.total_exercises"></progress>
+        <a v-if="progress.next_chapter_id" :href="`#chapter-${progress.next_chapter_id}`" class="resume-button">
           继续学习
         </a>
       </div>
@@ -76,10 +76,10 @@ import {
   collectCourse,
   uncollectCourse,
   submitChapterExercises
+  
 } from '@/services/apiService';
 import type { CourseDetail, Chapter, Exercise, ExerciseAnswer, Progress } from '@/types';
 
-// --- 类型定义 ---
 interface EnhancedExercise extends Exercise {
   options: string[];
 }
@@ -119,23 +119,35 @@ const fetchPageData = async () => {
   try {
     loading.value = true;
     error.value = null;
+    progress.value = null; // 在开始获取数据前，重置进度
 
     const courseResponse = await getCourseDetail(courseId);
     course.value = courseResponse.data as EnhancedCourseDetail;
     initializeAnswers(course.value.chapters);
 
-    if (localStorage.getItem('accessToken') && course.value.is_subscribed) {
-      const progressResponse = await getCourseProgress(courseId);
-      progress.value = progressResponse.data;
-    }
-  } catch (err: unknown) { // 使用 unknown
+    if (localStorage.getItem('accessToken') && course.value?.is_subscribed) {
+      try {
+        const progressResponse = await getCourseProgress(courseId);
+        progress.value = progressResponse.data;
+      } catch (progressError) {
+        console.warn("无法获取课程进度 (可能是未订阅或其它原因):", progressError);
+        // 即使失败，也提供一个默认的进度对象，以避免UI无限加载
+        progress.value = {
+          completed_exercises: 0,
+          total_exercises: course.value?.chapterCount || 0, // 使用章节数作为备用
+          progress_percentage: 0,
+        };
+      }
+    } else if (course.value) {
+      // 如果用户未订阅，也创建一个默认的进度对象
+      progress.value = {
+        completed_exercises: 0,
+        total_exercises: course.value?.chapterCount || 0,
+        progress_percentage: 0,
+      };
+  } catch (err: unknown) {
+    error.value = '无法加载课程数据，请稍后再试。';
     console.error('API Error:', err);
-    if (isAxiosError(err) && err.response?.status !== 403) {
-      // 仅当错误不是“未订阅”时，才显示主错误信息
-      error.value = '无法加载课程数据，请稍后再试。';
-    } else if (err instanceof Error) {
-      error.value = err.message;
-    }
   } finally {
     loading.value = false;
   }
@@ -148,28 +160,47 @@ const handleCompleteChapter = async (chapterId: number) => {
   const chapter = course.value.chapters.find(c => c.id === chapterId);
   if (!chapter || !chapter.exercises) return;
 
-  const answersToSubmit: ExerciseAnswer[] = Object.entries(userAnswers)
-    .filter(([exerciseId, answer]) => 
-      chapter.exercises.some(ex => ex.id === Number(exerciseId))
-    )
-    .map(([exerciseId, userAnswer]) => ({ exerciseId: Number(exerciseId), userAnswer }));
+  const answersToSubmit: ExerciseAnswer[] = [];
+  for (const exercise of chapter.exercises) {
+    const userAnswer = userAnswers[exercise.id];
+    // 只有当用户确实作答了，才提交
+    if (userAnswer && (userAnswer.length > 0 || typeof userAnswer === 'string')) {
+      answersToSubmit.push({
+        exerciseId: exercise.id,
+        userAnswer: userAnswer
+      });
+    }
+  }
   
   if (answersToSubmit.length === 0) {
-    alert("请至少回答一道题目");
+    alert("请至少回答一道题目后再提交。");
     return;
   }
 
   try {
-    const response = await submitChapterExercises(courseId, String(chapterId), answersToSubmit);
-    progress.value = response.data.newProgress;
-    alert(`章节完成！得分: ${response.data.score}, 是否通过: ${response.data.isPassed}`);
+    await submitChapterExercises(courseId, String(chapterId), answersToSubmit);
+    
+    // 无论后端返回什么，都刷新数据
+    alert('答案已提交！正在刷新学习进度...');
+    await fetchPageData();
+
   } catch (err: unknown) {
     console.error("提交练习失败:", err);
     let alertMessage = "提交失败，未知错误。";
-    if (isAxiosError(err) && err.response?.data) {
-      alertMessage = "提交失败: " + JSON.stringify((err.response.data as { error: string }).error || err.response.data);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 500) {
+        alertMessage = "服务器暂时无法处理请求，请稍后再试。";
+      } else if (err.response?.data) {
+        alertMessage = "提交失败: " + JSON.stringify((err.response.data as { error: string }).error || err.response.data);
+      }
     }
     alert(alertMessage);
+    // 发生错误后也尝试刷新页面数据，以确保状态一致性
+    try {
+      await fetchPageData();
+    } catch (refreshError) {
+      console.warn("刷新页面数据失败:", refreshError);
+    }
   }
 };
 

@@ -7,7 +7,7 @@ from .models import User,CertificationRequest,Course,Chapter,Exercise
 from .models import (Subscription, Collection, Option, fill_in_blank,
                      GalleryItem, GalleryCollection, GalleryDownloadRecord, 
                      GalleryItemRating,Community,CommunityPost,CommunityReply,
-                     Message,MessageThread)
+                     Message,MessageThread,UserExerciseSubmission)
  
 # ===============================================
 # =======       基础配置  Serializers     =======
@@ -194,14 +194,13 @@ class FillInBlankAnswerSerializer(serializers.ModelSerializer):
     class Meta:
         model = fill_in_blank
         fields = ['id', 'index_number', 'correct_answer', 'case_sensitive']
-
 class ExerciseSerializer(serializers.ModelSerializer):
     answer_details = serializers.SerializerMethodField()
     class Meta:
         model = Exercise
         fields = ['id', 'chapter', 'type','prompt', 
                   'explanation', 'image_upload', 
-                  'image_url', 'answer_details']
+                  'image_url','answer_details']
         read_only_fields = ['id', 'chapter', 'type', 'prompt', 
                   'explanation']
     def get_answer_details(self, obj):
@@ -213,10 +212,21 @@ class ExerciseSerializer(serializers.ModelSerializer):
             blanks = obj.fill_in_blanks.all()
             return FillInBlankAnswerSerializer(blanks, many=True).data
         return None
+#学生版
+class OptionStudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Option
+        fields = ['id', 'text']
+class ExerciseStudentSerializer(serializers.ModelSerializer):
+    options = OptionStudentSerializer(many=True, read_only=True) # 使用上面那个安全的 Option 序列器
+
+    class Meta:
+        model = Exercise
+        fields = ['id', 'type', 'prompt', 'image_upload', 'image_url', 'options']
 
 class ChapterSerializer(serializers.ModelSerializer):
     """章节信息的序列化器（包含练习题）"""
-    exercises = ExerciseSerializer(many=True, read_only=True)
+    exercises = ExerciseStudentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Chapter
@@ -338,6 +348,12 @@ class ExerciseSubmissionSerializer(serializers.Serializer):
     """整个章节练习提交的序列化器"""
     answers = AnswerSerializer(many=True)
 
+class UserExerciseSubmissionSerializer(serializers.ModelSerializer):
+    """用于创建用户练习题提交记录的序列化器"""
+    class Meta:
+        model = UserExerciseSubmission
+        # 定义需要写入的字段
+        fields = ['user', 'exercise', 'submitted_answer', 'is_correct']
 
 
 # ===============================================

@@ -10,17 +10,33 @@ from .models import Community, Subscription, GalleryDownloadRecord
 class IsStudent(BasePermission):
     """允许学生或更高等级的角色访问"""
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['student', 'artist', 'admin']
+        if not request.user.is_authenticated:
+            return False
+        # Safely access the role attribute
+        role = getattr(request.user, 'role', None)
+        if role is None:
+            return False
+        return role.lower() in ['student', 'artist', 'admin']
 
 class IsArtist(BasePermission):
     """只允许创作者或更高等级的角色访问"""
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['artist', 'admin']
+        if not request.user.is_authenticated:
+            return False
+        role = getattr(request.user, 'role', None)
+        if role is None:
+            return False
+        return role.lower() in ['artist', 'admin']
 
 class IsAdmin(BasePermission):
     """只允许管理员访问"""
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'admin'
+        if not request.user.is_authenticated:
+            return False
+        role = getattr(request.user, 'role', None)
+        if role is None:
+            return False
+        return role.lower() == 'admin'
     
 # ===============================================
 # =======    对象权限 (Object Permissions)   =======
@@ -66,4 +82,4 @@ class IsPaidUsers(BasePermission):
             if GalleryDownloadRecord.objects.filter(user=user, gallery_item=community.related_gallery_item).exists():
                 return True  
 
-        return False 
+        return False

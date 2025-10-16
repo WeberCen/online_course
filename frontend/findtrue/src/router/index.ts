@@ -21,10 +21,20 @@ import MyProfileView from '../views/MyProfileView.vue';
 import CreateCourseView from '../views/CreateCourseView.vue'
 import CreateGalleryItemView from '../views/CreateGalleryItemView.vue'
 import CreateCommunityView from '../views/CreateCommunityView.vue'
+import LoginView from '@/views/LoginView.vue';
+import RegisterView from '@/views/RegisterView.vue';
+import ForgotPasswordView from '@/views/ForgotPasswordView.vue';
+import { useUserStore } from '../stores/userStore';
+
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(),
   routes: [
+    { path: '/', redirect: '/courses' },
+    // 认证相关路由
+    { path: '/login', name: 'Login', component: LoginView, meta: { requiresAuth: false } },
+    { path: '/register', name: 'Register', component: RegisterView, meta: { requiresAuth: false } },
+    { path: '/forgot-password', name: 'ForgotPassword', component: ForgotPasswordView, meta: { requiresAuth: false } },
     {
       path: '/',
       redirect: '/courses' // 将根路径重定向到课程列表页
@@ -126,4 +136,19 @@ const router = createRouter({
   ]
 })
 
-export default router
+// 添加路由守卫
+router.beforeEach((to, from, next) => {
+  const userStore = useUserStore();
+  
+  // 检查当前路由是否需要身份验证
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  
+  if (requiresAuth && !userStore.isLoggedIn) {
+    // 需要登录但未登录，重定向到登录页面
+    next({ name: 'login', query: { redirect: to.fullPath } });
+  } else {
+    next();
+  }
+});
+
+export default router;

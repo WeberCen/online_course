@@ -1,12 +1,17 @@
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import App from './App.vue';
+import router from './router';
+import { useUserStore } from './stores/userStore';
 
-import App from './App.vue'
-import router from './router'
+const app = createApp(App);
+const pinia = createPinia();
 
-const app = createApp(App)
+app.use(pinia);
+app.use(router);
 
-app.use(createPinia())
-app.use(router)
+// 初始化用户状态
+const userStore = useUserStore(pinia);
+userStore.initializeUser();
 
-app.mount('#app')
+app.mount('#app');
