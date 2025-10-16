@@ -1,7 +1,12 @@
 <template>
   <div class="community-detail">
     <div v-if="loading">正在加载帖子详情...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="error" class="error">
+      <p>{{ error }}</p>
+      <button v-if="error.includes('登入')" @click="goToLogin" class="login-button">
+        前往登入
+      </button>
+    </div>
     <div v-else-if="post">
       <div class="post-main">
         <h1>{{ post.title }}</h1>
@@ -42,12 +47,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { getCommunityPostDetail, createCommunityReply, likeCommunityPost } from '@/services/apiService';
-import type { CommunityPost } from '@/types';
+import type { CommunityPost, OperationResponse } from '@/types';
 import { isAxiosError } from 'axios';
 
 const route = useRoute();
+const router = useRouter();
 const post = ref<CommunityPost | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -66,23 +72,39 @@ const fetchPost = async () => {
     loading.value = false;
     return;
   }
+
   try {
     loading.value = true;
-    const response = await getCommunityPostDetail(communityId, postId);
-    if (response.success) {
-      post.value = response.data;
-    } else {
-      error.value = response.error || '加载帖子详情失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    error.value = null;
+    post.value = await getCommunityPostDetail(communityId, postId);
   } catch (err) {
-    error.value = '无法加载帖子详情。';
-    console.error(err);
+    console.error("加载帖子详情失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '您需要登入才能查看此內容。';
+      } else {
+        const errorData = err.response?.data;
+        let message = err.message;
+        if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+          message = errorData.detail;
+        }
+        error.value = `加载帖子失败: ${message}`;
+      }
+    } else {
+      error.value = '加载帖子时发生未知错误。';
+    }
   } finally {
     loading.value = false;
   }
 };
+
 onMounted(fetchPost);
+
+// --- 修改點 5: 增加跳轉到登入頁的函數 ---
+const goToLogin = () => {
+  // 可以在跳轉時附帶一個查詢參數，告知登入頁成功後要跳轉回這裡
+  router.push({ path: '/login', query: { redirect: route.fullPath } });
+};
 
 const submitReply = async () => {
   if (!postId || !newReplyContent.value.trim()) return;
@@ -90,10 +112,14 @@ const submitReply = async () => {
   try {
     await createCommunityReply(postId, { content: newReplyContent.value });
     newReplyContent.value = '';
-    await fetchPost(); // 重新加载数据以显示新回复
+    await fetchPost();
   } catch (err) {
     console.error("回复失败:", err);
-    alert("回复失败，请确保您已登录。");
+    if (isAxiosError(err) && (err.response?.status === 401 || err.response?.status === 403)) {
+        alert("请先登录后再回复。");
+    } else {
+        alert("回复失败，请稍后再试。");
+    }
   } finally {
     isReplying.value = false;
   }
@@ -102,23 +128,17 @@ const submitReply = async () => {
 const handleLikePost = async () => {
   if (!postId) return;
   try {
-    const response = await likeCommunityPost(postId);
-    if (response.success) {
-      alert(`操作成功: ${response.data.status}`);
-      await fetchPost();
-    } else {
-      error.value = response.error || '点赞失败，请稍后再试。';
-      console.error('API Error:', response.error);
+    const response: OperationResponse = await likeCommunityPost(postId);
+    if (response.status) {
+        alert(`操作成功: ${response.status}`);
     }
+    await fetchPost();
   } catch(err) {
-    console.error("点赞失败:", err); // 记录完整的错误信息以供调试
-
-    if (isAxiosError(err) && err.response?.status === 401) {
-      // 如果是未授权错误
-      alert("点赞失败，请先登录。");
+    console.error("点赞/取消点赞失败:", err);
+    if (isAxiosError(err) && (err.response?.status === 401 || err.response?.status === 403)) {
+      alert("请先登录。");
     } else {
-      // 其他所有错误
-      alert("点赞失败，请稍后再试。");
+      alert("操作失败，请稍后再试。");
     }
   }
 };

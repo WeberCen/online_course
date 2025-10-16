@@ -30,7 +30,6 @@ import RichTextEditor from '@/components/RichTextEditor.vue';
 const router = useRouter();
 const route = useRoute();
 
-// --- 智能表单的核心逻辑 ---
 const communityId = computed(() => route.params.id as string | undefined);
 const isEditMode = computed(() => !!communityId.value);
 
@@ -45,24 +44,18 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   if (isEditMode.value && communityId.value) {
     try {
-      const response = await getCommunityDetail(communityId.value);
-      if (response.success) {
-        const { name, description } = response.data;
-        communityData.name = name;
-        communityData.description = description;
-        // 注意：旧的 coverImage URL 我们可以在 data 中额外存储用于预览
-      } else {
-        error.value = response.error || '加载社群详情失败，请稍后再试。';
-        console.error('API Error:', response.error);
-      }
+      const data = await getCommunityDetail(communityId.value);
+      communityData.name = data.name;
+      communityData.description = data.description;
+      // 注意：舊的 coverImage URL 可在 data 中額外存儲用於預覽
     } catch (err) {
-    console.error("操作失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "抱歉，只有创作者才能执行此操作。";
-    } else {
-      error.value = '操作失败，请检查您的输入。';
+      console.error("加载社群详情失败:", err);
+      if (isAxiosError(err) && err.response?.status === 404) {
+        error.value = "找不到指定的社群。";
+      } else {
+        error.value = '加载社群详情失败，请稍后再试。';
+      }
     }
-  }
   }
 });
 
@@ -81,31 +74,39 @@ const submitForm = async () => {
   const formData = new FormData();
   formData.append('name', communityData.name);
   formData.append('description', communityData.description);
+  
+  // 只有在用戶選擇了新圖片時才上傳
   if (communityData.coverImage) {
     formData.append('coverImage', communityData.coverImage);
   }
 
   try {
-    let response;
     if (isEditMode.value && communityId.value) {
-      response = await updateCommunity(communityId.value, formData);
+      // 編輯模式
+      await updateCommunity(communityId.value, formData);
       alert('社群更新成功！');
+      // 更新成功後，跳轉回該社群的帖子列表
+      router.push({ name: 'community-posts-list', params: { communityId: communityId.value } });
     } else {
-      response = await createCommunity(formData);
+      // 創建模式
+      const newCommunity = await createCommunity(formData);
       alert('社群创建成功！');
-    }
-    if (response.success) {
-      router.push({ name: 'community-posts-list', params: { communityId: String(response.data.id) } });
-    } else {
-      error.value = response.error || '操作失败，请稍后再试。';
-      console.error('API Error:', response.error);
+      // 創建成功後，跳轉到新社群的帖子列表 (假設後端返回的物件中包含 id)
+      router.push({ name: 'community-posts-list', params: { communityId: String(newCommunity.id) } });
     }
   } catch (err) {
     console.error("操作失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "信息获取失败，请稍后再试。";
+    if (isAxiosError(err)) {
+      if (err.response?.status === 403) {
+        error.value = "抱歉，您没有权限执行此操作。";
+      } else if (err.response?.data) {
+        // 嘗試顯示後端返回的驗證錯誤
+        error.value = `操作失败: ${JSON.stringify(err.response.data)}`;
+      } else {
+        error.value = "操作失败，请检查您的输入或网络连接。";
+      }
     } else {
-      error.value = '操作失败，请检查您的输入。';
+      error.value = '发生未知错误，请重试。';
     }
   } finally {
     isSubmitting.value = false;

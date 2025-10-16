@@ -1,137 +1,3 @@
-<script setup lang="ts">
-import { ref ,onUnmounted} from 'vue';
-import { useRouter } from 'vue-router';
-import { isAxiosError } from 'axios';
-import { authService } from '@/services/apiService';
-import type { PasswordResetRequest,PasswordResetConfirm } from '@/types';
-
-const router = useRouter();
-const code = ref('');
-const newPassword = ref('');
-const confirmPassword = ref('');
-const step = ref(1); 
-const loading = ref(false);
-const errorMessage = ref('');
-const successMessage = ref('');
-const countdown = ref(0);
-let countdownInterval: number | null = null;
-const contactInput = ref('');
-
-
-const sendVerificationCode = async () => {
-  if (!contactInput.value) {
-    errorMessage.value = '请输入邮箱或手机号';
-    return;
-  }
-
-  loading.value = true;
-  errorMessage.value = '';
-  const isEmail = contactInput.value.includes('@'); 
-  const payload: PasswordResetRequest = isEmail 
-    ? { email: contactInput.value } 
-    : { phone: contactInput.value };
-
-
-  try {
-    const result = await authService.resetPasswordRequest(payload);
-    if (result.success) {
-      successMessage.value = '驗證碼已發送到您的帳戶，請查收';
-      startCountdown();
-      step.value = 2;
-    } else {
-      errorMessage.value = result.error || '發送驗證碼失敗，請稍後重試';
-    }
-  } catch (error) {
-    if (isAxiosError(error) && error.response) {
-      errorMessage.value = error.response.data?.detail || error.response.data?.email?.[0] || '發送失敗，請檢查帳號是否正確或稍後再試';
-    } else {
-      errorMessage.value = '發送驗證碼過程中發生未知錯誤，請檢查網路連接';
-    }
-    console.error(error);
-  } finally {
-    loading.value = false;
-  }
-};
-
-// 重置密码
-const resetPassword = async () => {
-  if (!code.value || !newPassword.value || !confirmPassword.value) {
-    errorMessage.value = '請填寫完整資訊';
-    return;
-  }
-  if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = '兩次輸入的密碼不一致';
-    return;
-  }
-
-  loading.value = true;
-  errorMessage.value = '';
-
-  // 2. 【已修正】只聲明一次 resetData，並根據條件構建
-  let resetData: PasswordResetConfirm;
-  const isEmail = contactInput.value.includes('@');
-
-  const baseData = {
-    code: code.value,
-    password: newPassword.value,
-    password2: confirmPassword.value,
-  };
-
-  if (isEmail) {
-    resetData = { ...baseData, email: contactInput.value };
-  } else {
-    resetData = { ...baseData, phone: contactInput.value };
-  }
-  
-  // 3. 執行 API 請求
-  try {
-    const result = await authService.resetPasswordConfirm(resetData);
-    if (result.success) {
-      successMessage.value = '密碼重置成功，請使用新密碼登入';
-      setTimeout(() => {
-        router.push('/login');
-      }, 2000);
-    } else {
-      errorMessage.value = result.error || '密碼重置失敗，請稍後重試';
-    }
-  } catch (error) {
-    if (isAxiosError(error) && error.response) {
-      errorMessage.value = error.response.data?.detail || error.response.data?.code?.[0] || '密碼重置失敗，請檢查驗證碼或新密碼';
-    } else {
-      errorMessage.value = '密碼重置過程中發生未知錯誤，請檢查網路連接';
-    }
-    console.error(error);
-  } finally {
-    loading.value = false;
-  }
-};
-
-// 倒計時功能
-const startCountdown = () => {
-  countdown.value = 60;
-  
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-  }
-  
-  countdownInterval = setInterval(() => {
-    countdown.value--;
-    if (countdown.value <= 0) {
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-      }
-    }
-  }, 1000) as unknown as number;
-};
-
-// 頁面卸載時清除定時器
-onUnmounted(() => {
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-  }
-});
-</script>
-
 <template>
   <div class="forgot-password-container">
     <div class="forgot-password-form">
@@ -213,6 +79,133 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { ref, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
+import { authService } from '@/services/apiService';
+import type { PasswordResetRequest, PasswordResetConfirm } from '@/types';
+
+const router = useRouter();
+const code = ref('');
+const newPassword = ref('');
+const confirmPassword = ref('');
+const step = ref(1);
+const loading = ref(false);
+const errorMessage = ref('');
+const successMessage = ref('');
+const countdown = ref(0);
+let countdownInterval: number | null = null;
+const contactInput = ref('');
+
+const sendVerificationCode = async () => {
+  if (!contactInput.value) {
+    errorMessage.value = '请输入邮箱或手机号';
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  const isEmail = contactInput.value.includes('@');
+  const payload: PasswordResetRequest = isEmail
+    ? { email: contactInput.value }
+    : { phone: contactInput.value };
+
+  try {
+    await authService.resetPasswordRequest(payload);
+    // 成功邏輯：API 調用成功後直接執行
+    successMessage.value = '驗證碼已發送到您的帳戶，請查收';
+    startCountdown();
+    step.value = 2;
+  } catch (err) {
+    console.error("发送验证码失败:", err);
+    if (isAxiosError(err) && err.response) {
+      const errorData = err.response.data as Record<string, unknown>;
+      // 安全地從後端錯誤中提取訊息
+      const detail = errorData?.detail;
+      const emailError = Array.isArray(errorData?.email) ? errorData.email[0] : null;
+      errorMessage.value = typeof detail === 'string' ? detail : (typeof emailError === 'string' ? emailError : '發送失敗，請檢查帳號是否正確或稍後再試');
+    } else {
+      errorMessage.value = '發送驗證碼過程中發生未知錯誤，請檢查網路連接';
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const resetPassword = async () => {
+  if (!code.value || !newPassword.value || !confirmPassword.value) {
+    errorMessage.value = '請填寫完整資訊';
+    return;
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    errorMessage.value = '兩次輸入的密碼不一致';
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
+
+  const isEmail = contactInput.value.includes('@');
+  const baseData = {
+    code: code.value,
+    password: newPassword.value,
+    password2: confirmPassword.value,
+  };
+
+  const resetData: PasswordResetConfirm = isEmail
+    ? { ...baseData, email: contactInput.value }
+    : { ...baseData, phone: contactInput.value };
+
+  try {
+    await authService.resetPasswordConfirm(resetData);
+    // 成功邏輯：API 調用成功後直接執行
+    successMessage.value = '密碼重置成功，請使用新密碼登入';
+    setTimeout(() => {
+      router.push('/login');
+    }, 2000);
+  } catch (err) {
+    console.error("密码重置失败:", err);
+    if (isAxiosError(err) && err.response) {
+      const errorData = err.response.data as Record<string, unknown>;
+      const detail = errorData?.detail;
+      const codeError = Array.isArray(errorData?.code) ? errorData.code[0] : null;
+      errorMessage.value = typeof detail === 'string' ? detail : (typeof codeError === 'string' ? codeError : '密碼重置失敗，請檢查驗證碼或新密碼');
+    } else {
+      errorMessage.value = '密碼重置過程中發生未知錯誤，請檢查網路連接';
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const startCountdown = () => {
+  countdown.value = 60;
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+  }
+  countdownInterval = setInterval(() => {
+    countdown.value--;
+    if (countdown.value <= 0) {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+      }
+    }
+  }, 1000) as unknown as number;
+};
+
+onUnmounted(() => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+  }
+});
+</script>
+
+
 
 <style scoped>
 .forgot-password-container {

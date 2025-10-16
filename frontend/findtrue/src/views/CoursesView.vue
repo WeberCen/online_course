@@ -27,6 +27,7 @@
 import { ref, onMounted } from 'vue';
 import { getCourses } from '@/services/apiService';
 import type { Course } from '@/types';
+import { isAxiosError } from 'axios'; // 引入 isAxiosError 用于错误判断
 
 const courses = ref<Course[]>([]);
 const loading = ref(true);
@@ -34,17 +35,29 @@ const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getCourses();
-    if (response.success) {
-      courses.value = response.data;
-    } else {
-      error.value = response.error || '加载课程列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回数据。如果请求失败，它会抛出错误并被 catch 捕获。
+    courses.value = await getCourses();
+
   } catch (err) {
-    error.value = '无法加载课程，请稍后再试。';
-    console.error(err);
+    // 失败的逻辑现在完全由 catch 块处理
+    console.error("加载课程列表失败:", err); // 打印完整的错误对象以供调试
+    
+    // 检查是否是 Axios 返回的错误
+    if (isAxiosError(err)) {
+      // 尝试从后端响应中获取更具体的错误信息
+      const errorData = err.response?.data;
+      let message = err.message; // 默认使用 Axios 的错误消息
+      // 检查 response.data 中是否有 'detail' 字段 (Django REST Framework 常用)
+      if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+        message = errorData.detail;
+      }
+      error.value = `加载课程失败: ${message}`;
+    } else {
+      // 处理非网络的其他错误
+      error.value = '加载课程时发生未知错误，请稍后再试。';
+    }
   } finally {
+    // 无论成功或失败，最后都停止加载状态
     loading.value = false;
   }
 });

@@ -1,9 +1,8 @@
 // frontend/findtrue/src/services/apiService.ts
 
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 import type {
   // 基础响应类型
-  ApiResponse,
   OperationResponse,
   
   // 核心基础类型
@@ -53,12 +52,8 @@ import type {
   VipPlan,
   
   // 错误处理类型
-  AxiosErrorResponse,
-  CustomAxiosError
+  AxiosErrorResponse
 } from '../types'; 
-
-
-  
 
 const apiClient = axios.create({
   baseURL: 'http://127.0.0.1:8000/v1/',
@@ -107,88 +102,44 @@ apiClient.interceptors.request.use(
   }
 );
 
-// 处理API错误的辅助函数
-const handleApiError = (error: CustomAxiosError): ApiResponse<never> => {
-  console.error('API Error:', error);
-  
-  if (error.response) {
-    // 服务器返回了错误状态码
-    const errorData = error.response.data || {};
-    const errorMessage = errorData.detail || 
-                         errorData.error || 
-                         errorData.message || 
-                         `请求失败: ${error.response.status || '未知状态码'}`;
-    return {
-      success: false,
-      error: errorMessage
-    };
-  } else if (error.request) {
-    // 请求已发送但没有收到响应
-    return {
-      success: false,
-      error: '网络错误，请检查您的网络连接'
-    };
-  } else {
-    // 其他错误
-    return {
-      success: false,
-      error: `请求配置错误: ${error.message || '未知错误'}`
-    };
-  }
-};
-
 // --- API 函数 ---
+
 // 认证相关API
 export const authService = {
   // 用户注册
-  register: async (data: RegisterData): Promise<ApiResponse<OperationResponse>> => {
-    try {
-      const response = await apiClient.post('/auth/register/', data);
-      return { success: true, data: response.data };
-    } catch (error) {
-      return handleApiError(error as CustomAxiosError);
-    }
+  register: async (data: RegisterData): Promise<OperationResponse> => {
+    const response = await apiClient.post('/auth/register/', data);
+    return response.data;
   },
   
   // 用户登录 - 支持用户名、邮箱或手机号
-  login: async (data: LoginData): Promise<ApiResponse<LoginResponse>> => {
-    try {
-      const response = await apiClient.post('/auth/login/', data);
+  login: async (data: LoginData): Promise<LoginResponse> => {
+    const response = await apiClient.post<LoginResponse>('/auth/login/', data);
+    
+    // 保存token到localStorage
+    if (response.data && response.data.tokens) {
       
-      // 保存token到localStorage
-      if (response.data.tokens) {
-        localStorage.setItem('accessToken', response.data.tokens.access);
-        localStorage.setItem('refreshToken', response.data.tokens.refresh);
-        localStorage.setItem('userData', JSON.stringify(response.data.user));
-        
-        // 更新axios默认headers
-        apiClient.defaults.headers.Authorization = `Bearer ${response.data.tokens.access}`;
-      }
+      localStorage.setItem('accessToken', response.data.tokens.access);
+      localStorage.setItem('refreshToken', response.data.tokens.refresh);
+      localStorage.setItem('userData', JSON.stringify(response.data.user));
       
-      return { success: true, data: response.data };
-    } catch (error) {
-      return handleApiError(error as CustomAxiosError);
+      // 更新 axios 預設 headers，使用 access Token
+      apiClient.defaults.headers.Authorization = `Bearer ${response.data.tokens.access}`;
     }
+    
+    return response.data;
   },
   
   // 密码重置请求
-  resetPasswordRequest: async (data:PasswordResetRequest): Promise<ApiResponse<OperationResponse>> => {
-    try {
-      const response = await apiClient.post('/auth/forgot-password/send-code/', data);
-      return { success: true, data: response.data };
-    } catch (error) {
-      return handleApiError(error as CustomAxiosError);
-    }
+  resetPasswordRequest: async (data: PasswordResetRequest): Promise<OperationResponse> => {
+    const response = await apiClient.post('/auth/forgot-password/send-code/', data);
+    return response.data;
   },
   
   // 密码重置确认
-  resetPasswordConfirm: async (data: PasswordResetConfirm): Promise<ApiResponse<OperationResponse>> => {
-    try {
-      const response = await apiClient.post('/auth/reset-password/', data);
-      return { success: true, data: response.data };
-    } catch (error) {
-      return handleApiError(error as CustomAxiosError);
-    }
+  resetPasswordConfirm: async (data: PasswordResetConfirm): Promise<OperationResponse> => {
+    const response = await apiClient.post('/auth/reset-password/', data);
+    return response.data;
   },
   
   // 退出登录
@@ -200,17 +151,13 @@ export const authService = {
   },
   
   // 更新用户资料
-  updateProfile: async (data: UserProfileUpdatePayload): Promise<ApiResponse<User>> => {
-    try {
-      const response = await apiClient.put('/auth/profile/', data);
-      // 更新本地存储的用户数据
-      if (response.data) {
-        localStorage.setItem('userData', JSON.stringify(response.data));
-      }
-      return { success: true, data: response.data };
-    } catch (error) {
-      return handleApiError(error as CustomAxiosError);
+  updateProfile: async (data: UserProfileUpdatePayload): Promise<User> => {
+    const response = await apiClient.put<User>('/auth/profile/', data);
+    // 更新本地存储的用户数据
+    if (response.data) {
+      localStorage.setItem('userData', JSON.stringify(response.data));
     }
+    return response.data;
   },
   
   // 获取当前登录用户信息
@@ -225,373 +172,223 @@ export const authService = {
   }
 };
 
-export const getCourses = async (): Promise<ApiResponse<Course[]>> => {
-  try {
-    const response = await apiClient.get<Course[]>('/courses/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCourses = async (): Promise<Course[]> => {
+  const response = await apiClient.get<Course[]>('/courses/');
+  return response.data;
 };
 
-export const getCourseDetail = async (id: string): Promise<ApiResponse<CourseDetail>> => {
-  try {
-    const response = await apiClient.get<CourseDetail>(`/courses/${id}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCourseDetail = async (id: string): Promise<CourseDetail> => {
+  const response = await apiClient.get<CourseDetail>(`/courses/${id}/`);
+  return response.data;
 };
 
-export const subscribeCourse = async (courseId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post(`/courses/${courseId}/subscribe/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const subscribeCourse = async (courseId: string): Promise<OperationResponse> => {
+  const response = await apiClient.post(`/courses/${courseId}/subscribe/`);
+  return response.data;
 };
 
-export const unsubscribeCourse = async (courseId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.delete(`/courses/${courseId}/subscribe/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const unsubscribeCourse = async (courseId: string): Promise<OperationResponse> => {
+  const response = await apiClient.delete(`/courses/${courseId}/subscribe/`);
+  return response.data;
 };
 
-export const collectCourse = async (courseId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post(`/courses/${courseId}/collect/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const collectCourse = async (courseId: string): Promise<OperationResponse> => {
+  const response = await apiClient.post(`/courses/${courseId}/collect/`);
+  return response.data;
 };
 
-export const uncollectCourse = async (courseId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.delete(`/courses/${courseId}/collect/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const uncollectCourse = async (courseId: string): Promise<OperationResponse> => {
+  const response = await apiClient.delete(`/courses/${courseId}/collect/`);
+  return response.data;
 };
 
-export const getCourseProgress = async (courseId: string): Promise<ApiResponse<Progress>> => {
-  try {
-    const response = await apiClient.get<Progress>(`/courses/${courseId}/progress/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCourseProgress = async (courseId: string): Promise<Progress> => {
+  const response = await apiClient.get<Progress>(`/courses/${courseId}/progress/`);
+  return response.data;
 };
 
-export const submitChapterExercises = async (courseId: string, chapterId: string, answers: ExerciseAnswer[]): Promise<ApiResponse<SubmissionResult>> => {
-  try {
-    const response = await apiClient.post<SubmissionResult>(`/courses/${courseId}/chapters/${chapterId}/submit/`, { answers });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const submitChapterExercises = async (courseId: string, chapterId: string, answers: ExerciseAnswer[]): Promise<SubmissionResult> => {
+  const response = await apiClient.post<SubmissionResult>(`/courses/${courseId}/chapters/${chapterId}/submit/`, { answers });
+  return response.data;
 };
 
-
-export const getGalleryWorks = async (): Promise<ApiResponse<GalleryItem[]>> => {
-  try {
-    const response = await apiClient.get<GalleryItem[]>('/gallery/works/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getGalleryWorks = async (): Promise<GalleryItem[]> => {
+  const response = await apiClient.get<GalleryItem[]>('/gallery/works/');
+  return response.data;
 };
 
-export const getGalleryWorkDetail = async (id: string): Promise<ApiResponse<GalleryItemDetail>> => {
-  try {
-    const response = await apiClient.get<GalleryItemDetail>(`/gallery/works/${id}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getGalleryWorkDetail = async (id: string): Promise<GalleryItemDetail> => {
+  const response = await apiClient.get<GalleryItemDetail>(`/gallery/works/${id}/`);
+  return response.data;
 };
 
-export const collectGalleryWork = async (workId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post(`/gallery/works/${workId}/collect/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const collectGalleryWork = async (workId: string): Promise<OperationResponse> => {
+  const response = await apiClient.post(`/gallery/works/${workId}/collect/`);
+  return response.data;
 };
 
-export const uncollectGalleryWork = async (workId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.delete(`/gallery/works/${workId}/collect/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const uncollectGalleryWork = async (workId: string): Promise<OperationResponse> => {
+  const response = await apiClient.delete(`/gallery/works/${workId}/collect/`);
+  return response.data;
 };
 
-export const downloadGalleryWork = async (workId: string, isConfirmed: boolean): Promise<ApiResponse<DownloadLinkPayload>> => {
-  try {
-    // 同样，在 post 请求时也加上泛型，让 axios 也知道返回类型
-    const response = await apiClient.post<DownloadLinkPayload>(`/gallery/works/${workId}/download/`, { confirm_cost: isConfirmed });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const downloadGalleryWork = async (workId: string, isConfirmed: boolean): Promise<DownloadLinkPayload> => {
+  const response = await apiClient.post<DownloadLinkPayload>(`/gallery/works/${workId}/download/`, { confirm_cost: isConfirmed });
+  return response.data;
 };
 
-export const getCommunities = async (): Promise<ApiResponse<Community[]>> => {
-  try {
-    const response = await apiClient.get<Community[]>('/communities/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCommunities = async (): Promise<Community[]> => {
+  const response = await apiClient.get<Community[]>('/communities/');
+  return response.data;
 };
 
-export const getCommunityDetail = async (communityId: string): Promise<ApiResponse<Community>> => {
-  try {
-    const response = await apiClient.get<Community>(`/communities/${communityId}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCommunityDetail = async (communityId: string): Promise<Community> => {
+  const response = await apiClient.get<Community>(`/communities/${communityId}/`);
+  return response.data;
 };
 
-export const getPostsForCommunity = async (communityId: string): Promise<ApiResponse<CommunityPostListItem[]>> => {
-  try {
-    const response = await apiClient.get<CommunityPostListItem[]>(`/communities/${communityId}/posts/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getPostsForCommunity = async (communityId: string): Promise<CommunityPostListItem[]> => {
+  const response = await apiClient.get<CommunityPostListItem[]>(`/communities/${communityId}/posts/`);
+  return response.data;
 };
 
-export const getCommunityPostDetail = async (communityId: string, postId: string): Promise<ApiResponse<CommunityPost>> => {
-  try {
-    const response = await apiClient.get<CommunityPost>(`/communities/${communityId}/posts/${postId}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getCommunityPostDetail = async (communityId: string, postId: string): Promise<CommunityPost> => {
+  const response = await apiClient.get<CommunityPost>(`/communities/${communityId}/posts/${postId}/`);
+  return response.data;
 };
 
-export const createCommunityPost = async (communityId: string, postData: { title: string; content: string; rewardPoints?: number }): Promise<ApiResponse<CommunityPost>> => {
-  try {
-    const response = await apiClient.post<CommunityPost>(`/communities/${communityId}/posts/`, postData);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const createCommunityPost = async (communityId: string, postData: { title: string; content: string; rewardPoints?: number }): Promise<CommunityPost> => {
+  const response = await apiClient.post<CommunityPost>(`/communities/${communityId}/posts/`, postData);
+  return response.data;
 };
 
-export const createCommunityReply = async (postId: string, replyData: { content: string }): Promise<ApiResponse<CommunityReply>> => {
-  try {
-    const response = await apiClient.post<CommunityReply>(`/posts/${postId}/replies/`, replyData);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const createCommunityReply = async (postId: string, replyData: { content: string }): Promise<CommunityReply> => {
+  const response = await apiClient.post<CommunityReply>(`/posts/${postId}/replies/`, replyData);
+  return response.data;
 };
 
-export const likeCommunityPost = async (postId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post(`/posts/${postId}/like/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const likeCommunityPost = async (postId: string): Promise<OperationResponse> => {
+  const response = await apiClient.post(`/posts/${postId}/like/`);
+  return response.data;
 };
 
-export const uploadEditorImage = async (file: File): Promise<ApiResponse<{ imageUrl: string }>> => {
-  try {
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await apiClient.post<{ imageUrl: string }>('/uploads/editor-image/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
-};
-export const getMessageThreads = async (): Promise<ApiResponse<MessageThread[]>> => {
-  try {
-    const response = await apiClient.get<MessageThread[]>('/my/messages/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const uploadEditorImage = async (file: File): Promise<{ imageUrl: string }> => {
+  const formData = new FormData();
+  formData.append('image', file);
+  
+  const response = await apiClient.post<{ imageUrl: string }>('/uploads/editor-image/', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
 };
 
-export const getMessageThreadDetail = async (threadId: string): Promise<ApiResponse<MessageThreadDetail>> => {
-  try {
-    const response = await apiClient.get<MessageThreadDetail>(`/my/messages/${threadId}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMessageThreads = async (): Promise<MessageThread[]> => {
+  const response = await apiClient.get<MessageThread[]>('/my/messages/');
+  return response.data;
 };
 
-export const createMessageThread = async (data: { subject: string; content: string; recipient_id: number }): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post('/my/messages/', data);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMessageThreadDetail = async (threadId: string): Promise<MessageThreadDetail> => {
+  const response = await apiClient.get<MessageThreadDetail>(`/my/messages/${threadId}/`);
+  return response.data;
 };
 
-export const deleteMessageThread = async (threadId: string): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.delete(`/my/messages/${threadId}/`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const createMessageThread = async (data: { subject: string; content: string; recipient_id: number }): Promise<OperationResponse> => {
+  const response = await apiClient.post('/my/messages/', data);
+  return response.data;
 };
 
-export const searchUsers = async (query: string): Promise<ApiResponse<Author[]>> => {
-  try {
-    const response = await apiClient.get<Author[]>(`/users/search/?q=${query}`);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
-};
-export const getMyCollections = async (): Promise<ApiResponse<MyCollections>> => {
-  try {
-    const response = await apiClient.get<MyCollections>('/my/collections/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const deleteMessageThread = async (threadId: string): Promise<OperationResponse> => {
+  const response = await apiClient.delete(`/my/messages/${threadId}/`);
+  return response.data;
 };
 
-export const getMySupported = async (): Promise<ApiResponse<MySupported>> => {
-  try {
-    const response = await apiClient.get<MySupported>('/my/supported/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const searchUsers = async (query: string): Promise<Author[]> => {
+  const response = await apiClient.get<Author[]>(`/users/search/?q=${query}`);
+  return response.data;
 };
 
-export const getMyCreations = async (): Promise<ApiResponse<MyCreations>> => {
-  try {
-    const response = await apiClient.get<MyCreations>('/my/creations/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMyCollections = async (): Promise<MyCollections> => {
+  const response = await apiClient.get<MyCollections>('/my/collections/');
+  return response.data;
 };
 
-export const getMyParticipations = async (): Promise<ApiResponse<MyParticipations>> => {
-  try {
-    const response = await apiClient.get<MyParticipations>('/my/participations/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMySupported = async (): Promise<MySupported> => {
+  const response = await apiClient.get<MySupported>('/my/supported/');
+  return response.data;
 };
 
-export const getMyProfile = async (): Promise<ApiResponse<User>> => {
-  try {
-    const response = await apiClient.get<User>('/my/profile/');
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMyCreations = async (): Promise<MyCreations> => {
+  const response = await apiClient.get<MyCreations>('/my/creations/');
+  return response.data;
 };
 
-export const updateMyProfile = async (payload: UserProfileUpdatePayload): Promise<ApiResponse<User>> => {
-  try {
-    const response = await apiClient.post<User>('/auth/profile', payload);
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMyParticipations = async (): Promise<MyParticipations> => {
+  const response = await apiClient.get<MyParticipations>('/my/participations/');
+  return response.data;
 };
 
-export const createCourse = async (courseData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post('/creator/courses/', courseData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const getMyProfile = async (): Promise<User> => {
+  const response = await apiClient.get<User>('/my/profile/');
+  return response.data;
 };
 
-export const createGalleryItem = async (itemData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post('/creator/gallery/', itemData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const updateMyProfile = async (payload: UserProfileUpdatePayload): Promise<User> => {
+  const response = await apiClient.post<User>('/auth/profile', payload);
+  return response.data;
 };
 
-export const createCommunity = async (communityData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.post('/creator/communities/', communityData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
-};
-export const updateCourse = async (courseId: string, courseData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.put(`/creator/courses/${courseId}/`, courseData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const createCourse = async (courseData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/courses/', courseData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
 };
 
-export const updateGalleryItem = async (itemId: string, itemData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.put(`/creator/gallery/${itemId}/`, itemData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+export const createGalleryItem = async (itemData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/gallery/', itemData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
 };
-export const updateCommunity = async (communityId: string, communityData: FormData): Promise<ApiResponse<OperationResponse>> => {
-  try {
-    const response = await apiClient.put(`/creator/communities/${communityId}/`, communityData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    return handleApiError(error as CustomAxiosError);
-  }
+
+export const createCommunity = async (communityData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/communities/', communityData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const updateCourse = async (courseId: string, courseData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.put(`/creator/courses/${courseId}/`, courseData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const updateGalleryItem = async (itemId: string, itemData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.put(`/creator/gallery/${itemId}/`, itemData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const updateCommunity = async (communityId: string, communityData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.put(`/creator/communities/${communityId}/`, communityData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
 };

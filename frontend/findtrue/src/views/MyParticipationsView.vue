@@ -18,6 +18,7 @@
 import { ref, onMounted } from 'vue';
 import { getMyParticipations } from '@/services/apiService';
 import type { MyParticipations } from '@/types';
+import { isAxiosError } from 'axios';
 
 const participations = ref<MyParticipations>({ posts: [] });
 const loading = ref(true);
@@ -25,16 +26,21 @@ const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getMyParticipations();
-    if (response.success) {
-      participations.value = response.data;
-    } else {
-      error.value = response.error || '加载您参与的帖子列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回您參與的帖子列表數據
+    participations.value = await getMyParticipations();
+
   } catch (err) {
-    error.value = "无法加载您参与的帖子列表。";
-    console.error(err);
+    console.error("加载参与的帖子列表失败:", err);
+    if (isAxiosError(err)) {
+      // 針對未登入的權限錯誤提供特定提示
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您参与的帖子。';
+      } else {
+        error.value = '加载您参与的帖子列表失败，请稍后再试。';
+      }
+    } else {
+      error.value = "加载时发生未知错误。";
+    }
   } finally {
     loading.value = false;
   }

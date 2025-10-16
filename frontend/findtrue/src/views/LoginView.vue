@@ -64,18 +64,31 @@ const handleLogin = async () => {
   };
 
   try {
-    const result = await authService.login(loginData);
-    if (result.success) {
-      // 登录成功，跳转到首页
-      router.push('/');
+    // 新模式: 如果登入成功，API 會在內部處理 token 保存，然後順利執行完畢
+    await authService.login(loginData);
+    
+    // 成功後直接跳轉
+    router.push('/');
+    
+  } catch (err) {
+    console.error("登录失败:", err);
+    if (isAxiosError(err) && err.response) {
+      // 安全地處理後端返回的錯誤訊息
+      const errorData = err.response.data as Record<string, unknown>;
+      
+      // Django REST Framework 常見的錯誤格式是 { "detail": "错误信息" }
+      if (typeof errorData?.detail === 'string') {
+        errorMessage.value = errorData.detail;
+      } 
+      // 或是欄位驗證錯誤 { "identifier": ["错误信息"] }
+      else if (Array.isArray(errorData?.identifier) && typeof errorData.identifier[0] === 'string') {
+        errorMessage.value = errorData.identifier[0];
+      }
+      else {
+        errorMessage.value = '登录失败，请检查您的账号和密码。';
+      }
     } else {
-      errorMessage.value = result.error || '登录失败，请检查您的账号和密码';
-    }
-  } catch (error) {
-    if (isAxiosError(error) && error.response) {
-      errorMessage.value = error.response.data?.detail || error.response.data?.email?.[0] || error.response.data?.phone?.[0] || '登录过程中发生错误，请稍后重试';
-    } else {
-      errorMessage.value = '登录过程中发生未知错误，请稍后重试';
+      errorMessage.value = '登录时发生未知错误，请重试。';
     }
   } finally {
     loading.value = false;

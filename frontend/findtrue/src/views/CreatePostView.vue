@@ -44,20 +44,28 @@ const submitPost = async () => {
   }
   isSubmitting.value = true;
   error.value = null;
+
   try {
-    const response = await createCommunityPost(communityId, post);
-    if (response.success) {
-      router.push({ name: 'community-post-detail', params: { communityId: communityId, postId: String(response.data.id) } });
-    } else {
-      error.value = response.error || '发布失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    const newPost = await createCommunityPost(communityId, post);
+    // 成功後直接跳轉到新帖子的詳情頁
+    router.push({ 
+      name: 'community-post-detail', 
+      params: { communityId: communityId, postId: String(newPost.id) } 
+    });
   } catch (err) {
     console.error("发帖失败:", err);
-    if (isAxiosError(err) && err.response?.data) {
-      error.value = (err.response.data as { error: string }).error || '发布失败，请检查您的输入或积分。';
+    if (isAxiosError(err)) {
+      const errorData = err.response?.data;
+      if (err.response?.status === 403) {
+        error.value = "抱歉，您没有权限在此社群发帖。";
+      } else if (typeof errorData === 'object' && errorData !== null) {
+        // 安全地處理後端驗證錯誤
+        error.value = `发布失败: ${Object.values(errorData).flat().join(' ')}`;
+      } else {
+        error.value = "发布失败，请检查您的输入或网络连接。";
+      }
     } else {
-      error.value = '发布失败，请稍后再试。';
+      error.value = '发生未知错误，请重试。';
     }
   } finally {
     isSubmitting.value = false;

@@ -73,21 +73,19 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   if (isEditMode.value && itemId.value) {
     try {
-      const response = await getGalleryWorkDetail(itemId.value);
-      if (response.success) {
-        const { title, description, version, requiredPoints, is_vip_free } = response.data;
-        itemData.title = title;
-        itemData.description = description;
-        itemData.version = version;
-        itemData.requiredPoints = requiredPoints;
-        itemData.is_vip_free = is_vip_free;
-      } else {
-        error.value = response.error || '加载作品详情失败，请稍后再试。';
-        console.error('API Error:', response.error);
-      }
+      const data = await getGalleryWorkDetail(itemId.value);
+      itemData.title = data.title;
+      itemData.description = data.description;
+      itemData.version = data.version;
+      itemData.requiredPoints = data.requiredPoints;
+      itemData.is_vip_free = data.is_vip_free;
     } catch (err) {
-      error.value = "无法加载作品数据进行编辑。";
-      console.error(err);
+      console.error("加载作品详情失败:", err);
+      if (isAxiosError(err) && err.response?.status === 404) {
+        error.value = "找不到指定的作品。";
+      } else {
+        error.value = '加载作品详情失败，请稍后再试。';
+      }
     }
   }
 });
@@ -103,8 +101,8 @@ const handleCoverImageChange = (event: Event) => {
 
 const handleWorkFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement;
-  if ( target.files && target.files.length > 0) {
-  itemData.workFile = target.files[0] !;
+  if (target.files && target.files.length > 0) {
+    itemData.workFile = target.files[0]!;
   } else {
     itemData.workFile = null;
   }
@@ -133,26 +131,30 @@ const submitForm = async () => {
   }
 
   try {
-    let response;
     if (isEditMode.value && itemId.value) {
-      response = await updateGalleryItem(itemId.value, formData);
+      const updatedItem = await updateGalleryItem(itemId.value, formData);
       alert('作品更新成功，已重新提交审核！');
+      router.push({ name: 'gallery-detail', params: { id: String(updatedItem.id) } });
     } else {
-      response = await createGalleryItem(formData);
+      const newItem = await createGalleryItem(formData);
       alert('作品上传成功，已提交审核！');
-    }
-    if (response.success) {
-      router.push({ name: 'gallery-detail', params: { id: String(response.data.id) } });
-    } else {
-      error.value = response.error || '操作失败，请稍后再试。';
-      console.error('API Error:', response.error);
+      router.push({ name: 'gallery-detail', params: { id: String(newItem.id) } });
     }
   } catch (err) {
     console.error("操作失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "抱歉，只有创作者才能执行此操作。";
+    if (isAxiosError(err)) {
+      if (err.response?.status === 403) {
+        error.value = "抱歉，您没有权限执行此操作。";
+      } else {
+        const errorData = err.response?.data;
+        if (typeof errorData === 'object' && errorData !== null) {
+          error.value = `操作失败: ${Object.values(errorData).flat().join(' ')}`;
+        } else {
+          error.value = "操作失败，请检查您的输入或网络连接。";
+        }
+      }
     } else {
-      error.value = '操作失败，请检查您的输入。';
+      error.value = '发生未知错误，请重试。';
     }
   } finally {
     isSubmitting.value = false;

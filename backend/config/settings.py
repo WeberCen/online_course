@@ -194,7 +194,7 @@ AUTHENTICATION_BACKENDS = [
 #令牌控制
 SIMPLE_JWT = {
     # 访问令牌 (Access Token) 的有效期
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=20), # 您可以在这里调整分钟数
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1), # 您可以在这里调整分钟数
 
     # 刷新令牌 (Refresh Token) 的有效期
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7), # 您可以在这里调整天数

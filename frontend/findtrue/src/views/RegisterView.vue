@@ -1,77 +1,3 @@
-<script setup lang="ts">
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { isAxiosError } from 'axios';
-import { authService } from '@/services/apiService';
-import type { RegisterData } from '@/types';
-
-const router = useRouter();
-const username = ref('');
-const nickname = ref('');
-const email = ref('');
-const phone = ref('');
-const password = ref('');
-const password2 = ref('');
-const ageGroup = ref('');
-const gender = ref('');
-const interests = ref<string[]>([]);
-const bio = ref('');
-const loading = ref(false);
-const errorMessage = ref('');
-
-const handleRegister = async () => {
-  // 基本验证
-  if (!username.value || !email.value || !phone.value || !password.value || !password2.value) {
-    errorMessage.value = '请填写所有必填字段';
-    return;
-  }
-  
-  if (password.value !== password2.value) {
-    errorMessage.value = '两次输入的密码不一致';
-    return;
-  }
-
-  loading.value = true;
-  errorMessage.value = '';
-
-  const registerData: RegisterData = {
-    username: username.value,
-    email: email.value,
-    phone: phone.value,
-    password: password.value,
-    password2: password2.value,
-
-    nickname: nickname.value, 
-    bio: bio.value,
-    gender: gender.value as 'male' | 'female' | 'other' | null,
-    ageGroup: ageGroup.value,
-    interests: interests.value,
-  };
-
-  try {
-    const result = await authService.register(registerData);
-    if (result.success) {
-      // 注册成功，提示用户并跳转到登录页
-      alert('注册成功，请登录');
-      router.push('/login');
-    } else {
-      errorMessage.value = result.error || '注册失败，请稍后重试';
-    }
-  } catch (err) {
-    if (isAxiosError(err) && err.response?.data) {
-      errorMessage.value = err.response.data.error || '注册过程中发生错误，请稍后重试';
-    } else {
-      errorMessage.value = '注册过程中发生未知错误，请稍后重试';
-    }
-  } finally {
-    loading.value = false;
-  }
-};
-
-const goToLogin = () => {
-  router.push('/login');
-};
-</script>
 
 <template>
   <div class="register-container">
@@ -155,6 +81,87 @@ const goToLogin = () => {
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
+import { authService } from '@/services/apiService';
+import type { RegisterData } from '@/types';
+
+const router = useRouter();
+const username = ref('');
+const nickname = ref('');
+const email = ref('');
+const phone = ref('');
+const password = ref('');
+const password2 = ref('');
+const ageGroup = ref('');
+const gender = ref('');
+const interests = ref<string[]>([]);
+const bio = ref('');
+const loading = ref(false);
+const errorMessage = ref('');
+
+const handleRegister = async () => {
+  if (!username.value || !email.value || !phone.value || !password.value || !password2.value) {
+    errorMessage.value = '请填写所有必填字段';
+    return;
+  }
+  
+  if (password.value !== password2.value) {
+    errorMessage.value = '两次输入的密码不一致';
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+
+  const registerData: RegisterData = {
+    username: username.value,
+    email: email.value,
+    phone: phone.value,
+    password: password.value,
+    password2: password2.value,
+    nickname: nickname.value, 
+    bio: bio.value,
+    gender: gender.value as 'male' | 'female' | 'other' | null,
+    ageGroup: ageGroup.value,
+    interests: interests.value,
+  };
+
+  try {
+    // 新模式: 如果註冊成功，API 調用會順利完成
+    await authService.register(registerData);
+    
+    // 成功後的邏輯直接放在這裡
+    alert('注册成功，请登录');
+    router.push('/login');
+
+  } catch (err) {
+    console.error("注册失败:", err);
+    if (isAxiosError(err) && err.response?.data) {
+      const errorData = err.response.data;
+      // 安全地處理後端返回的驗證錯誤（通常是一個物件）
+      if (typeof errorData === 'object' && errorData !== null) {
+        // 將所有錯誤訊息合併成一個字串顯示給用戶
+        errorMessage.value = Object.values(errorData).flat().join(' ');
+      } else {
+        errorMessage.value = '注册失败，请检查您的输入。';
+      }
+    } else {
+      errorMessage.value = '注册过程中发生未知错误，请检查您的网络连接。';
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const goToLogin = () => {
+  router.push('/login');
+};
+</script>
+
 
 <style scoped>
 /* 添加适当的样式 */

@@ -22,23 +22,38 @@ import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { getMessageThreadDetail } from '@/services/apiService';
 import type { MessageThreadDetail } from '@/types';
+import { isAxiosError } from 'axios';
+
 const route = useRoute();
 const thread = ref<MessageThreadDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+
 onMounted(async () => {
   const threadId = route.params.threadId as string;
+  if (!threadId) {
+    error.value = "会话 ID 缺失。";
+    loading.value = false;
+    return;
+  }
+
   try {
-    const response = await getMessageThreadDetail(threadId);
-    if (response.success) {
-      thread.value = response.data;
-    } else {
-      error.value = response.error || '加载会话内容失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回会话详情数据
+    thread.value = await getMessageThreadDetail(threadId);
+
   } catch (err) {
-    error.value = "无法加载会话内容。";
-    console.error(err);
+    console.error("加载会话内容失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 404) {
+        error.value = '找不到指定的会话。';
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '您无权查看此会话。';
+      } else {
+        error.value = '加载会话内容失败，请稍后再试。';
+      }
+    } else {
+      error.value = "加载时发生未知错误。";
+    }
   } finally {
     loading.value = false;
   }

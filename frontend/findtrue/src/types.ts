@@ -1,15 +1,6 @@
 // frontend/findtrue/src/types.ts
 
 
-
-// ===============================================
-// =======          响应类型定义          =======
-// ===============================================
-
-export type ApiResponse<T> =
-  | { success: true; data: T }
-  | { success: false; error?: string };
-
 // ===============================================
 // =======          核心基础类型          =======
 // ===============================================
@@ -48,11 +39,15 @@ export type UserProfileUpdatePayload = Partial<Pick<User, 'nickname' | 'ageGroup
 // ===============================================
 // =======          认证模块类型          =======
 // ===============================================
-export interface LoginResponse {
-  token: string;
-  refreshToken: string;
-  user: User;
+export interface AuthTokens {
+  access: string;
+  refresh: string;
 }
+
+export interface LoginResponse {
+  tokens: AuthTokens;
+  user: User;
+} 
 
 export interface RegisterData {
   username: string;
@@ -89,6 +84,11 @@ export type PasswordResetConfirm = PasswordResetConfirmBase & (
 // ===============================================
 // =======          课程模块类型          =======
 // ===============================================
+export interface ExerciseOption {
+  id: number;
+  text: string;
+}
+
 export interface Chapter {
   id: number;
   title: string;
@@ -125,10 +125,10 @@ export interface Exercise {
   id: number;
   prompt: string;
   type: 'multiple-choice' | 'fill-in-the-blank';
-  options?: string[];
-  explanation: string | null; // 新增
-  image_upload: string | null; // 新增
-  image_url: string | null; // 新增
+  options: ExerciseOption[];
+  explanation: string | null; 
+  image_upload: string | null; 
+  image_url: string | null; 
 }
 
 
@@ -301,15 +301,4 @@ export interface AxiosErrorResponse {
   error?: string;
   message?: string;
   [key: string]: boolean | string | number | object | undefined;   
-}
-
-// 自定义Axios错误类型，不直接继承AxiosError以避免类型冲突
-export interface CustomAxiosError {
-  response?: {
-    data?: AxiosErrorResponse;
-    status?: number;
-  };
-  request?: unknown;
-  message?: string;
-  [key: string]: unknown;
 }

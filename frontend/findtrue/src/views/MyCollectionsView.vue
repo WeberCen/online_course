@@ -34,6 +34,7 @@
 import { ref, onMounted } from 'vue';
 import { getMyCollections } from '@/services/apiService';
 import type { MyCollections } from '@/types';
+import { isAxiosError } from 'axios';
 
 const collections = ref<MyCollections>({ courses: [], gallery_items: [] });
 const loading = ref(true);
@@ -41,16 +42,21 @@ const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getMyCollections();
-    if (response.success) {
-      collections.value = response.data;
-    } else {
-      error.value = response.error || '加载收藏列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回收藏列表數據
+    collections.value = await getMyCollections();
+
   } catch (err) {
-    error.value = "无法加载收藏列表。";
-    console.error(err);
+    console.error("加载收藏列表失败:", err);
+    if (isAxiosError(err)) {
+      // 針對未登入的權限錯誤提供特定提示
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您的收藏。';
+      } else {
+        error.value = '加载收藏列表失败，请稍后再试。';
+      }
+    } else {
+      error.value = "加载收藏时发生未知错误。";
+    }
   } finally {
     loading.value = false;
   }

@@ -34,6 +34,7 @@
 import { ref, onMounted } from 'vue';
 import { getMySupported } from '@/services/apiService';
 import type { MySupported } from '@/types';
+import { isAxiosError } from 'axios';
 
 const supported = ref<MySupported>({ courses: [], gallery_items: [] });
 const loading = ref(true);
@@ -41,16 +42,21 @@ const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getMySupported();
-    if (response.success) {
-      supported.value = response.data;
-    } else {
-      error.value = response.error || '加载您的已购列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回已購列表數據
+    supported.value = await getMySupported();
+
   } catch (err) {
-    error.value = "无法加载您的已购列表。";
-    console.error(err);
+    console.error("加载已购列表失败:", err);
+    if (isAxiosError(err)) {
+      // 針對未登入的權限錯誤提供特定提示
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您的已购列表。';
+      } else {
+        error.value = '加载您的已购列表失败，请稍后再试。';
+      }
+    } else {
+      error.value = "加载时发生未知错误。";
+    }
   } finally {
     loading.value = false;
   }

@@ -84,19 +84,18 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue';
 import { getMyProfile, updateMyProfile } from '@/services/apiService';
-import type { User, UserProfileUpdatePayload } from '@/types'; // 从 @/types 导入
+import type { User, UserProfileUpdatePayload } from '@/types';
 import { isAxiosError } from 'axios';
-import RichTextEditor from '@/components/RichTextEditor.vue'; // 导入富文本编辑器
+import RichTextEditor from '@/components/RichTextEditor.vue';
 
 const user = ref<User | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const isSaving = ref(false);
 
-// 创建一个独立的响应式对象来绑定表单
 const editableProfile = reactive<UserProfileUpdatePayload>({
   nickname: '',
-  bio: '', // 新增
+  bio: '',
   gender: null,
   ageGroup: null,
   interests: [],
@@ -106,23 +105,28 @@ const allInterests = ['代码学习', '思维训练', '游戏开发', '网页爬
 
 onMounted(async () => {
   try {
-    const response = await getMyProfile();
-    if (response.success) {
-      user.value = response.data;
-    
-    // 将获取到的数据同步到可编辑对象中
-    editableProfile.nickname = response.data.nickname;
-    editableProfile.bio = response.data.bio; 
-    editableProfile.gender = response.data.gender;
-    editableProfile.ageGroup = response.data.ageGroup;
-    editableProfile.interests = response.data.interests || [];
-  } else{
-    error.value = response.error || "無法加載您的個人信息。";
-    console.error('API Error:', response.error);
+    // 新模式: 直接等待 API 返回個人資料數據
+    const profileData = await getMyProfile();
+    user.value = profileData;
+
+    // 將獲取到的數據同步到可編輯的表單物件中
+    editableProfile.nickname = profileData.nickname;
+    editableProfile.bio = profileData.bio;
+    editableProfile.gender = profileData.gender;
+    editableProfile.ageGroup = profileData.ageGroup;
+    editableProfile.interests = profileData.interests || [];
+
+  } catch (err) {
+    console.error("加载个人信息失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您的个人信息。';
+      } else {
+        error.value = '无法加载您的个人信息，请稍后重试。';
+      }
+    } else {
+      error.value = "加载时发生未知错误。";
     }
-  }catch (err) {
-    error.value = "无法加载您的个人信息，请稍后重试。";
-    console.error(err);
   } finally {
     loading.value = false;
   }
@@ -130,22 +134,30 @@ onMounted(async () => {
 
 const updateProfile = async () => {
   isSaving.value = true;
+  error.value = null; // 清除舊的錯誤訊息
   try {
-    const response = await updateMyProfile(editableProfile);
-    if (response.success) {
-      user.value = response.data; 
+    // 新模式: 直接等待更新後的用戶數據返回
+    const updatedUser = await updateMyProfile(editableProfile);
+    user.value = updatedUser;
+    
+    // 如果需要，也可以再次同步 editableProfile，儘管通常不是必須的
+    // Object.assign(editableProfile, updatedUser);
 
     alert('个人信息更新成功！');
-  } else {
-      // 處理業務邏輯上的失敗（例如，暱稱已被佔用）
-      alert(`更新失敗: ${response.error || '未知錯誤'}`);
-    }
-  }catch (err) {
+  } catch (err) {
     console.error("更新失败:", err);
     if (isAxiosError(err) && err.response?.data) {
-      alert("更新失败: " + JSON.stringify(err.response.data));
+      const errorData = err.response.data;
+      // 安全地處理後端返回的驗證錯誤
+      if (typeof errorData === 'object' && errorData !== null) {
+        // 將所有驗證錯誤合併為一個字串顯示
+        error.value = `更新失败: ${Object.values(errorData).flat().join(' ')}`;
+        alert(error.value);
+      } else {
+        alert("更新失败，请稍后再试。");
+      }
     } else {
-      alert("更新失败，请稍后再试。");
+      alert("更新失败，发生未知错误。");
     }
   } finally {
     isSaving.value = false;

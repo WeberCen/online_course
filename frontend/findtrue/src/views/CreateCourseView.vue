@@ -43,7 +43,6 @@ import RichTextEditor from '@/components/RichTextEditor.vue';
 const router = useRouter();
 const route = useRoute();
 
-// --- 智能表单的核心逻辑 ---
 const courseId = computed(() => route.params.id as string | undefined);
 const isEditMode = computed(() => !!courseId.value);
 
@@ -58,28 +57,21 @@ const isSubmitting = ref(false);
 const error = ref<string | null>(null);
 
 onMounted(async () => {
-  if (isEditMode.value && courseId.value) { // 如果是编辑模式...
+  if (isEditMode.value && courseId.value) {
     try {
-      const response = await getCourseDetail(courseId.value); // ...就去后端获取课程数据
-      // 将获取到的数据，填充到我们的表单中
-      if (response.success) {
-        const { title, description, pricePoints, is_vip_free } = response.data;
-        courseData.title = title;
-        courseData.description = description;
-        courseData.pricePoints = pricePoints;
-        courseData.is_vip_free = is_vip_free;
-      } else {
-        error.value = response.error || '加载课程详情失败，请稍后再试。';
-        console.error('API Error:', response.error);
-      }
+      const data = await getCourseDetail(courseId.value);
+      courseData.title = data.title;
+      courseData.description = data.description;
+      courseData.pricePoints = data.pricePoints;
+      courseData.is_vip_free = data.is_vip_free;
     } catch (err) {
-    console.error("读取失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "读取课程数据失败，请稍后再试。";
-    } else {
-      error.value = '读取课程数据失败，请检查您的输入。';
+      console.error("加载课程详情失败:", err);
+      if (isAxiosError(err) && err.response?.status === 404) {
+        error.value = "找不到指定的课程。";
+      } else {
+        error.value = '加载课程详情失败，请稍后再试。';
+      }
     }
-  }
   }
 });
 
@@ -105,27 +97,31 @@ const submitForm = async () => {
   }
 
   try {
-    let response;
     if (isEditMode.value && courseId.value) {
-      response = await updateCourse(courseId.value, formData);
+      const updatedCourse = await updateCourse(courseId.value, formData);
       alert('课程更新成功，已重新提交审核！');
+      router.push({ name: 'course-detail', params: { id: String(updatedCourse.id) } });
     } else {
-      // 创建模式：调用 create API
-      response = await createCourse(formData);
+      const newCourse = await createCourse(formData);
       alert('课程创建成功！');
-    }
-    if (response.success) {
-      router.push({ name: 'course-detail', params: { id: String(response.data.id) } });
-    } else {
-      error.value = response.error || '操作失败，请稍后再试。';
-      console.error('API Error:', response.error);
+      router.push({ name: 'course-detail', params: { id: String(newCourse.id) } });
     }
   } catch (err) {
-    console.error("创建失败:", err);
-    if (isAxiosError(err) && err.response?.status === 403) {
-      error.value = "抱歉，只有创作者才能创建课程。";
+    console.error("操作失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 403) {
+        error.value = "抱歉，您没有权限执行此操作。";
+      } else {
+        const errorData = err.response?.data;
+        // 安全地處理後端驗證錯誤，避免使用 any
+        if (typeof errorData === 'object' && errorData !== null) {
+          error.value = `操作失败: ${Object.values(errorData).flat().join(' ')}`;
+        } else {
+          error.value = "操作失败，请检查您的输入或网络连接。";
+        }
+      }
     } else {
-      error.value = '创建失败，请检查您的输入。';
+      error.value = '发生未知错误，请重试。';
     }
   } finally {
     isSubmitting.value = false;

@@ -29,16 +29,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { createMessageThread,searchUsers } from '@/services/apiService';
+import { createMessageThread, searchUsers } from '@/services/apiService';
 import { isAxiosError } from 'axios';
 import type { Author } from '@/types';
 
-
-
-
 const router = useRouter();
 const message = reactive({ subject: '', content: '' });
-const selectedRecipient = ref<Author | null>(null); 
+const selectedRecipient = ref<Author | null>(null);
 const searchResults = ref<Author[]>([]);
 const recipientSearch = ref('');
 const isSending = ref(false);
@@ -47,32 +44,29 @@ let searchTimeout: number | undefined;
 
 const handleSearch = () => {
   clearTimeout(searchTimeout);
-  searchResults.value = []; 
-  selectedRecipient.value = null; 
-  
+  searchResults.value = [];
+  selectedRecipient.value = null;
+
   if (recipientSearch.value.trim().length > 1) {
     searchTimeout = window.setTimeout(async () => {
       try {
-        const response = await searchUsers(recipientSearch.value);
-        if (response.success) {
-          searchResults.value = response.data;
-        } else {
-          error.value = response.error || '搜索用户失败，请稍后再试。';
-          console.error('API Error:', response.error);
-        }
-        
+        searchResults.value = await searchUsers(recipientSearch.value);
       } catch (err) {
         console.error("用户搜索失败:", err);
+        if (isAxiosError(err)) {
+          error.value = '搜索用户失败，请稍后再试。';
+        } else {
+          error.value = '发生未知错误。';
+        }
       }
-    }, 300); 
+    }, 300);
   }
 };
 
-// 用户从结果列表中选择一个
 const selectRecipient = (user: Author) => {
   selectedRecipient.value = user;
-  recipientSearch.value = user.nickname || user.username; 
-  searchResults.value = []; 
+  recipientSearch.value = user.nickname || user.username;
+  searchResults.value = [];
 };
 
 const sendMessage = async () => {
@@ -83,20 +77,27 @@ const sendMessage = async () => {
   isSending.value = true;
   error.value = null;
   try {
-    const payload = { 
-      ...message, 
-      recipient_id: selectedRecipient.value.id 
+    const payload = {
+      ...message,
+      recipient_id: selectedRecipient.value.id
     };
     await createMessageThread(payload);
     alert('发送成功！');
     router.push({ name: 'message-inbox' });
-  } catch (err: unknown) {
+  } catch (err) {
     console.error("发送失败:", err);
-    if (isAxiosError(err) && err.response?.data) {
-        const errorData = err.response.data as { detail?: string, error?: string };
-        error.value = errorData.detail || errorData.error || '发送失败，请检查您的输入。';
-    } else {
+    if (isAxiosError(err)) {
+      const errorData = err.response?.data;
+      if (typeof errorData === 'object' && errorData !== null) {
+        // 安全地從後端錯誤中提取訊息
+        const detail = (errorData as Record<string, unknown>).detail;
+        const errorMsg = (errorData as Record<string, unknown>).error;
+        error.value = typeof detail === 'string' ? detail : (typeof errorMsg === 'string' ? errorMsg : '发送失败，请检查您的输入。');
+      } else {
         error.value = '发送失败，请稍后再试。';
+      }
+    } else {
+      error.value = '发送时发生未知错误。';
     }
   } finally {
     isSending.value = false;

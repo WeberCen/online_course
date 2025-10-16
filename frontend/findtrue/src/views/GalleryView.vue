@@ -22,6 +22,7 @@
 import { ref, onMounted } from 'vue';
 import { getGalleryWorks } from '@/services/apiService';
 import type { GalleryItem } from '@/types';
+import { isAxiosError } from 'axios';
 
 const works = ref<GalleryItem[]>([]);
 const loading = ref(true);
@@ -29,16 +30,22 @@ const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getGalleryWorks();
-    if (response.success) {
-      works.value = response.data;
-    } else {
-      error.value = response.error || '加载画廊作品失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回畫廊作品列表數據
+    works.value = await getGalleryWorks();
+
   } catch (err) {
-    error.value = '无法加载画廊作品，请稍后再试。';
-    console.error(err);
+    console.error("加载画廊作品失败:", err);
+    if (isAxiosError(err)) {
+      // 嘗試從後端響應中獲取更具體的錯誤訊息
+      const errorData = err.response?.data;
+      let message = err.message;
+      if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+        message = errorData.detail;
+      }
+      error.value = `加载作品失败: ${message}`;
+    } else {
+      error.value = '加载作品时发生未知错误，请稍后再试。';
+    }
   } finally {
     loading.value = false;
   }

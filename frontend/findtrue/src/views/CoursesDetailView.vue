@@ -42,19 +42,25 @@
           <div v-if="course.is_subscribed && chapter.exercises && chapter.exercises.length > 0" class="exercise-section">
             <h4>章節練習</h4>
             <div v-for="exercise in chapter.exercises" :key="exercise.id" class="exercise">
-              <p>{{ exercise.prompt }}</p>
-              <div v-if="exercise.type === 'multiple-choice'">
-                <div v-for="option in exercise.options" :key="option">
-                  <input type="checkbox" :id="`ex${exercise.id}-opt-${option}`" :value="option" v-model="userAnswers[exercise.id]">
-                  <label :for="`ex${exercise.id}-opt-${option}`">{{ option }}</label>
-                </div>
-              </div>
-              <div v-if="exercise.type === 'fill-in-the-blank'">
-                <input type="text" placeholder="請輸入答案" v-model="userAnswers[exercise.id]">
-              </div>
-            </div>
-            <button @click="handleCompleteChapter(chapter.id)" class="complete-btn">提交本章答案</button>
+            <p v-html="exercise.prompt"></p>
+            <div v-if="exercise.type === 'multiple-choice'">     
+              <div v-for="option in exercise.options" :key="option.id">
+                <input 
+                  type="checkbox" 
+                  :id="`ex${exercise.id}-opt-${option.id}`" 
+                  :value="option.text"  
+                  v-model="userAnswers[exercise.id]"
+                >
+             <label :for="`ex${exercise.id}-opt-${option.id}`">{{ option.text }}</label>
+           </div>
+
           </div>
+          <div v-if="exercise.type === 'fill-in-the-blank'">
+            <input type="text" placeholder="請輸入答案" v-model="userAnswers[exercise.id]">
+          </div>
+        </div>
+        <button @click="handleCompleteChapter(chapter.id)" class="complete-btn">提交本章答案</button>
+      </div>
         </li>
       </ul>
       <div v-if="!course.is_subscribed && course.chapters.length < course.chapterCount" class="preview-limit">
@@ -77,12 +83,12 @@ import {
   uncollectCourse,
   submitChapterExercises
 } from '@/services/apiService';
-import type { CourseDetail, Chapter, Exercise, ExerciseAnswer, Progress } from '@/types';
+import type { CourseDetail, Chapter, ExerciseAnswer, Progress} from '@/types';
 
-// --- 類型增強 ---
-// 為了在組件中處理 exercises 的選項，我們擴展了原始類型
+/* --- 類型增強  ---
+
 interface EnhancedExercise extends Exercise {
-  options: string[];
+  options: ExerciseOption[];
 }
 interface EnhancedChapter extends Chapter {
   exercises: EnhancedExercise[];
@@ -90,19 +96,19 @@ interface EnhancedChapter extends Chapter {
 interface EnhancedCourseDetail extends CourseDetail {
   chapters: EnhancedChapter[];
 }
-
-// --- 響應式狀態 ---
+*/
+// --- 響應式狀態 (保持不變) ---
 const route = useRoute();
-const course = ref<EnhancedCourseDetail | null>(null);
+const course = ref<CourseDetail | null>(null);
+//const course = ref<EnhancedCourseDetail | null>(null);
 const progress = ref<Progress | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const userAnswers = reactive<Record<number, string | string[]>>({});
 const courseId = route.params.id as string;
 
-// --- 輔助函式 ---
-// 初始化用戶答案的資料結構
-const initializeAnswers = (chapters: EnhancedChapter[]) => {
+// --- 輔助函式 (保持不變) ---
+const initializeAnswers = (chapters: Chapter[]) => {
   for (const chapter of chapters) {
     if (chapter.exercises) {
       for (const exercise of chapter.exercises) {
@@ -120,50 +126,46 @@ const fetchPageData = async () => {
     return;
   }
 
+  loading.value = true;
+  error.value = null;
+
   try {
-    loading.value = true;
-    error.value = null;
-    progress.value = null; // 每次刷新都重置進度
-
     // 1. 獲取課程詳情
-    const courseResponse = await getCourseDetail(courseId);
+    // 新模式: 直接接收數據，如果失敗會在此處拋出錯誤並進入 catch 塊
+    const courseData = await getCourseDetail(courseId);
+    course.value = courseData;
+    
+    initializeAnswers(course.value.chapters);
 
-    // 2. 檢查 API 呼叫是否成功 (黃金準則)
-    if (courseResponse.success) {
-      course.value = courseResponse.data as EnhancedCourseDetail;
-      initializeAnswers(course.value.chapters);
-
-      // 3. 檢查用戶是否已登入且已訂閱，以決定是否要獲取進度
-      const isLoggedIn = !!localStorage.getItem('accessToken');
-      if (isLoggedIn && course.value.is_subscribed) {
-        try {
-          const progressResponse = await getCourseProgress(courseId);
-          if (progressResponse.success) {
-            progress.value = progressResponse.data;
-          } else {
-            console.warn("無法獲取課程進度:", progressResponse.error);
-            // 即使獲取進度失敗，也提供一個預設值，避免頁面顯示異常
-            progress.value = { completed_exercises: 0, total_exercises: course.value.chapterCount || 0, progress_percentage: 0, next_chapter_id: null };
-          }
-        } catch (progressError) {
-          console.error("獲取課程進度時發生嚴重錯誤:", progressError);
-          progress.value = { completed_exercises: 0, total_exercises: course.value.chapterCount || 0, progress_percentage: 0, next_chapter_id: null };
-        }
+    // 2. 檢查用戶是否已登入且已訂閱，以決定是否要獲取進度
+    const isLoggedIn = !!localStorage.getItem('accessToken');
+    if (isLoggedIn && course.value.is_subscribed) {
+      try {
+        // 同樣，直接獲取進度數據
+        progress.value = await getCourseProgress(courseId);
+      } catch (progressError) {
+        // 如果只是獲取進度失敗，我們不讓整個頁面崩潰，只在控制台警告
+        console.warn("無法獲取課程進度:", progressError);
+        progress.value = null; // 或者設置一個預設值
       }
-    } else {
-      // 如果獲取課程詳情本身就失敗了
-      error.value = courseResponse.error || '無法載入課程數據，請稍後再試。';
     }
   } catch (err) {
-    // 捕獲網路中斷等更嚴重的錯誤
-    error.value = '載入課程時發生網路錯誤，請檢查您的連線。';
-    console.error('API Error:', err);
+    // 這個 catch 會捕獲 getCourseDetail 的失敗
+    console.error('載入課程核心數據時發生錯誤:', err);
+    if (isAxiosError(err)) {
+      // 安全地處理錯誤訊息
+      const errorData = err.response?.data as Record<string, unknown>;
+      const detail = typeof errorData?.detail === 'string' ? errorData.detail : err.message;
+      error.value = `無法載入課程：${detail}`;
+    } else {
+      error.value = '載入課程時發生未知錯誤，請稍後再試。';
+    }
   } finally {
     loading.value = false;
   }
 };
 
-// --- 生命週期鉤子 ---
+// --- 生命週期鉤子 (保持不變) ---
 onMounted(fetchPageData);
 
 // --- 事件處理函式 ---
@@ -172,52 +174,75 @@ const handleCompleteChapter = async (chapterId: number) => {
   const chapter = course.value.chapters.find(c => c.id === chapterId);
   if (!chapter || !chapter.exercises) return;
 
-
-  const answersToSubmit: ExerciseAnswer[] = []
-  for (const exercise of chapter.exercises) {
+  const answersToSubmit: ExerciseAnswer[] = chapter.exercises.reduce((acc, exercise) => {
     const userAnswer = userAnswers[exercise.id];
-    if (userAnswer !== undefined && userAnswer !== null && userAnswer.length > 0) {
-      answersToSubmit.push({
+    // 檢查答案是否有效 (非 undefined, null, 或空字串)
+    if (userAnswer !== undefined && userAnswer !== null && String(userAnswer).length > 0) {
+      acc.push({
         exerciseId: exercise.id,
-        userAnswer: userAnswer,
+        userAnswer: userAnswer, 
       });
     }
-  }
+    return acc;
+  }, [] as ExerciseAnswer[]);
+
   if (answersToSubmit.length === 0) {
     alert("請至少回答一道題目後再提交。");
     return;
   }
 
   try {
-    const response = await submitChapterExercises(courseId, String(chapterId), answersToSubmit);
-    if (response.success) {
-      alert('答案已提交！正在刷新學習進度...');
-      await fetchPageData();
-    } else {
-      alert(`提交失敗: ${response.error || '未知錯誤'}`);
-    }
+    await submitChapterExercises(courseId, String(chapterId), answersToSubmit);
+    alert('答案已提交！正在刷新學習進度...');
+    await fetchPageData();
   } catch (err) {
     console.error("提交練習失敗:", err);
-    if (isAxiosError(err) && err.response?.data) {
-      alert("提交失敗: " + JSON.stringify(err.response.data));
+    if (isAxiosError(err)) {
+      const errorData = err.response?.data;
+      let errorDetail = "未知伺服器錯誤";
+      if (typeof errorData === 'object' && errorData !== null) {
+        const data = errorData as Record<string, unknown>;
+        if (typeof data.detail === 'string') {
+          errorDetail = data.detail;
+        } else {
+          errorDetail = JSON.stringify(data);
+        }
+      }
+      alert(`提交失敗: ${errorDetail}`);
     } else {
       alert("提交失敗，請檢查網路連線。");
     }
   }
 };
 
-
 const handleSubscribe = async () => {
   if (!course.value) return;
-  try {
-    await subscribeCourse(String(course.value.id));
-    alert('訂閱成功！');
-    await fetchPageData(); // 重新載入頁面以更新所有狀態
-  } catch (err) {
-    console.error("訂閱失敗:", err);
-    alert("操作失敗，您可能需要重新登入或檢查您的積分。");
+  const confirmationMessage = `訂閱該課程將扣除 ${course.value.pricePoints} 積分，您確定嗎？`;
+  if (window.confirm(confirmationMessage)) {
+    try {
+      await subscribeCourse(String(course.value.id));
+      alert('訂閱成功！');
+      await fetchPageData(); 
+    } catch (err) {
+      console.error("訂閱失敗:", err);
+      if (isAxiosError(err)) {
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          alert("請先登入後再訂閱課程。");
+        } else {
+          const errorData = err.response?.data;
+          let errorDetail = "您可能積分不足或發生其他錯誤。";
+          if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+            errorDetail = errorData.detail;
+          }
+          alert(`操作失敗: ${errorDetail}`);
+        }
+      } else {
+        alert("發生未知的錯誤，請重試。");
+      }
+    }
   }
 };
+
 
 const handleUnsubscribe = async () => {
   if (!course.value) return;
@@ -225,10 +250,18 @@ const handleUnsubscribe = async () => {
     try {
       await unsubscribeCourse(String(course.value.id));
       alert('已取消訂閱。');
-      await fetchPageData(); // 重新載入頁面
+      await fetchPageData(); 
     } catch (err) {
       console.error("取消訂閱失敗:", err);
-      alert("操作失敗，請重試。");
+      if (isAxiosError(err)) {
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          alert("請先登入。");
+        } else {
+          alert("操作失敗，請重試。");
+        }
+      } else {
+        alert("發生未知的錯誤，請重試。");
+      }
     }
   }
 };
@@ -237,22 +270,45 @@ const handleCollect = async () => {
   if (!course.value) return;
   try {
     await collectCourse(String(course.value.id));
-    // 為了更好的用戶體驗，立即更新UI，而不是等待重新載入
+    alert('感謝支持，收藏成功');
     course.value.is_collected = true; 
   } catch (err) {
     console.error("收藏失敗:", err);
-    alert("操作失敗，您可能需要重新登入。");
+    if (isAxiosError(err)) {
+      if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+        alert("請先登入後再收藏。");
+      } else {
+        const errorData = err.response?.data;
+        let errorDetail = "請稍後重試。";
+        if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+          errorDetail = errorData.detail;
+        }
+        alert(`操作失敗: ${errorDetail}`);
+      }
+    } else {
+      alert("發生未知的錯誤，請重試。");
+    }
   }
 };
 
 const handleUncollect = async () => {
   if (!course.value) return;
-  try {
-    await uncollectCourse(String(course.value.id));
-    course.value.is_collected = false;
-  } catch (err) {
-    console.error("取消收藏失敗:", err);
-    alert("操作失敗，請重試。");
+  if (window.confirm("您確定要取消收藏嗎？")) {
+
+    try {
+      await uncollectCourse(String(course.value.id));
+      course.value.is_collected = false;
+    } catch (err) {
+      console.error("取消收藏失敗:", err);
+      if (isAxiosError(err)) {
+        if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+          alert("請先登入。");
+        } else {
+          alert("操作失敗，請重試。");
+        }
+      } else {
+        alert("發生未知的錯誤，請重試。");}
+    }
   }
 };
 </script>

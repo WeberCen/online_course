@@ -71,25 +71,33 @@
 import { ref, onMounted } from 'vue';
 import { getMyCreations } from '@/services/apiService';
 import type { MyCreations } from '@/types';
+import { isAxiosError } from 'axios';
 
-
-const creations = ref<MyCreations>({ 
-  courses: [], gallery_items: [], founded_communities: [] });
+const creations = ref<MyCreations>({
+  courses: [],
+  gallery_items: [],
+  founded_communities: []
+});
 const loading = ref(true);
 const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getMyCreations();
-    if (response.success) {
-      creations.value = response.data;
-    } else {
-      error.value = response.error || '加载创作列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    // 新模式: 直接等待 API 返回創作列表數據
+    creations.value = await getMyCreations();
+
   } catch (err) {
-    error.value = "无法加载您的创作列表。";
-    console.error(err);
+    console.error("加载创作列表失败:", err);
+    if (isAxiosError(err)) {
+      // 針對未登入的權限錯誤提供特定提示
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您的创作。';
+      } else {
+        error.value = '加载创作列表失败，请稍后再试。';
+      }
+    } else {
+      error.value = "加载您的创作时发生未知错误。";
+    }
   } finally {
     loading.value = false;
   }

@@ -30,22 +30,33 @@
 import { ref, onMounted } from 'vue';
 import { getMessageThreads } from '@/services/apiService';
 import type { MessageThread } from '@/types';
+import { isAxiosError } from 'axios';
+
 const threads = ref<MessageThread[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 
 onMounted(async () => {
   try {
-    const response = await getMessageThreads();
-    if (response.success) {
-      threads.value = response.data;
-    } else {
-      error.value = response.error || '加载消息列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    threads.value = await getMessageThreads();
+
   } catch (err) {
-    error.value = "无法加载消息列表，请稍后再试。";
-    console.error(err);
+    console.error("加载消息列表失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        error.value = '请先登录以查看您的消息。';
+      } else {
+        const errorData = err.response?.data;
+        let message = err.message;
+        // 安全地檢查後端返回的 detail 欄位
+        if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+          message = errorData.detail;
+        }
+        error.value = `加载失败: ${message}`;
+      }
+    } else {
+      error.value = "加载消息时发生未知错误，请稍后再试。";
+    }
   } finally {
     loading.value = false;
   }

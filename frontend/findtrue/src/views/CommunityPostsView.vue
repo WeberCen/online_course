@@ -32,6 +32,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { getPostsForCommunity } from '@/services/apiService';
 import type { CommunityPostListItem } from '@/types';
+import { isAxiosError } from 'axios';
 
 const route = useRoute();
 const posts = ref<CommunityPostListItem[]>([]);
@@ -45,17 +46,24 @@ onMounted(async () => {
     loading.value = false;
     return;
   }
+  
   try {
-    const response = await getPostsForCommunity(communityId);
-    if (response.success) {
-      posts.value = response.data;
-    } else {
-      error.value = response.error || '加载帖子列表失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    loading.value = true;
+    error.value = null;
+    posts.value = await getPostsForCommunity(communityId);
   } catch (err) {
-    error.value = '无法加载帖子列表，请稍后再试。';
-    console.error(err);
+    console.error("加载帖子列表失败:", err);
+    if (isAxiosError(err)) {
+      const errorData = err.response?.data;
+      let message = err.message;
+      if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+        message = errorData.detail;
+      }
+      
+      error.value = `加载帖子列表失败: ${message}`;
+    } else {
+      error.value = '加载帖子列表时发生未知错误。';
+    }
   } finally {
     loading.value = false;
   }

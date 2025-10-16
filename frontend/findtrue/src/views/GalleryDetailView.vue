@@ -36,10 +36,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
-import { getGalleryWorkDetail,
-  collectGalleryWork,  
+import { 
+  getGalleryWorkDetail,
+  collectGalleryWork,
   uncollectGalleryWork,
-  downloadGalleryWork } from '@/services/apiService';
+  downloadGalleryWork 
+} from '@/services/apiService';
 import type { GalleryItemDetail } from '@/types';
 import { isAxiosError } from 'axios';
 
@@ -47,38 +49,47 @@ const route = useRoute();
 const work = ref<GalleryItemDetail | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
-
 const workId = route.params.id as string;
 
 onMounted(async () => {
-  const workId = route.params.id as string;
+  if (!workId) {
+    error.value = "作品 ID 缺失。";
+    loading.value = false;
+    return;
+  }
   try {
-    const response = await getGalleryWorkDetail(workId);
-    if (response.success) {
-      work.value = response.data;
-    } else {
-      error.value = response.error || '加载作品详情失败，请稍后再试。';
-      console.error('API Error:', response.error);
-    }
+    work.value = await getGalleryWorkDetail(workId);
   } catch (err) {
-    error.value = '无法加载作品详情。';
-    console.error(err);
+    console.error("加载作品详情失败:", err);
+    if (isAxiosError(err) && err.response?.status === 404) {
+      error.value = '找不到指定的作品。';
+    } else {
+      error.value = '无法加载作品详情。';
+    }
   } finally {
     loading.value = false;
   }
 });
-// --- 收藏/取消收藏逻辑 ---
+
 const handleCollect = async () => {
   if (!work.value) return;
   try {
     await collectGalleryWork(String(work.value.id));
     work.value.is_collected = true;
   } catch (err) {
-    if (isAxiosError(err) && err.response?.status === 409) {
-        work.value.is_collected = true;
-        alert('您似乎已经收藏了此作品。');
+    console.error("收藏失败:", err);
+    if (isAxiosError(err)) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        alert("请先登录再收藏。");
+      } else if (err.response?.status === 409) {
+        // 如果后端返回冲突，表示已经收藏，同步前端状态
+        if (work.value) work.value.is_collected = true;
+        alert('您已经收藏了此作品。');
+      } else {
+        alert("操作失败，请稍后再试。");
+      }
     } else {
-        alert("操作失败，您可能需要重新登录。");
+        alert("发生未知错误，请重试。");
     }
   }
 };
@@ -89,67 +100,62 @@ const handleUncollect = async () => {
     await uncollectGalleryWork(String(work.value.id));
     work.value.is_collected = false;
   } catch (err) {
-    if (isAxiosError(err) && err.response?.status === 409) {
-        work.value.is_collected = true;
-        alert('您已经取消了收藏。');
+    console.error("取消收藏失败:", err);
+    if (isAxiosError(err)) {
+        if (err.response?.status === 401 || err.response?.status === 403) {
+            alert("请先登录。");
+        } else {
+            alert("操作失败，请稍后再试。");
+        }
     } else {
-        alert("操作失败，请重试。");
+        alert("发生未知错误，请重试。");
     }
   }
 };
 
-// --- 下载逻辑 (包含二次确认) ---
-const handleDownload = async (isConfirmedOrRedownload: boolean = false) => {
+const handleDownload = async (isConfirmed: boolean = false) => {
   if (!workId) return;
 
-  if (!isConfirmedOrRedownload) {
-    // 首次下载，直接调用 API
-    try {
-      // 直接将参数传递给 API 调用
-      const response = await downloadGalleryWork(workId, isConfirmedOrRedownload);
-      if (response.success) {
-        // 逻辑简化：如果成功，总是处理下载链接
-        alert("获取下载链接成功！");
-        window.location.href = response.data.downloadUrl;
-        if (work.value) work.value.is_downloaded = true;
-      } else {
-        error.value = response.error || '下载作品失败，请稍后再试。';
-        console.error('API Error:', response.error);
-      }
-    } catch (err) {
-      if (isAxiosError(err) && err.response) {
-        const data = err.response.data;
-        
-        // 仅在首次下载（isConfirmedOrRedownload 为 false）时才需要确认
-      if (err.response.status === 409 && data.confirmationRequired && !isConfirmedOrRedownload) {
-       const confirmed = window.confirm(`本次下载需要扣除 ${data.pointsToDeduct} 积分，您确定吗？`);
-         if (confirmed) {
-         // 用户确认后，再次调用下载接口，并设置确认参数为 true
-          await handleDownload(true); } }
-        // 情况二：前置条件未满足
-      else if (err.response.status === 409 && data.prerequisiteNotMet) {
-        const requiredTitle = data.requiredWork.title;
+  try {
+    const response = await downloadGalleryWork(workId, isConfirmed);
+    alert("获取下载链接成功！");
+    window.location.href = response.downloadUrl;
+    if (work.value) work.value.is_downloaded = true;
+  } catch (err) {
+    console.error("下载失败:", err);
+    if (isAxiosError(err) && err.response) {
+      const data = err.response.data as Record<string, unknown> | undefined;
+
+      if (err.response.status === 409 && 
+          typeof data === 'object' && data !== null && 
+          data.confirmationRequired === true && 
+          !isConfirmed) 
+      {
+        const confirmed = window.confirm(`本次下载需要扣除 ${data.pointsToDeduct} 积分，您确定吗？`);
+        if (confirmed) {
+          await handleDownload(true);
+        }
+      } else if (err.response.status === 409 && 
+                 typeof data === 'object' && data !== null &&
+                 data.prerequisiteNotMet === true) 
+      {
+        // 安全地存取嵌套屬性
+        const requiredWork = data.requiredWork as Record<string, unknown> | undefined;
+        const requiredTitle = typeof requiredWork?.title === 'string' ? requiredWork.title : '未知作品';
         alert(`下载失败：您需要先拥有前置作品《${requiredTitle}》。`);
-        // 未来我们甚至可以在这里提供一个跳转到该作品页面的链接
-      }
-        // 其他错误情况
-      else if (err.response.status === 401) {
-         alert("请先登录再进行操作。");
-        }
-      else if (err.response.status === 402) {
-          alert("您的积分不足！");
-        }
-      else {alert("下载失败，未知错误。");
-        
+      } else if (err.response.status === 401) {
+        alert("请先登录再进行操作。");
+      } else if (err.response.status === 402) {
+        alert("您的积分不足！");
+      } else {
+        const detail = (typeof data === 'object' && data !== null && typeof data.detail === 'string') ? data.detail : '未知错误';
+        alert(`下载失败: ${detail}`);
       }
     } else {
-      // 处理非 Axios 错误
       alert("下载失败，发生网络或未知错误。");
-      console.error(err);
     }
-   }
-}};
-
+  }
+};
 </script>
 
 <style scoped>
