@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
 import { authService } from '@/services/apiService';
 import type { RegisterData } from '@/types';
 
@@ -35,15 +36,16 @@ const handleRegister = async () => {
 
   const registerData: RegisterData = {
     username: username.value,
-    nickname: nickname.value || username.value,
     email: email.value,
     phone: phone.value,
     password: password.value,
     password2: password2.value,
+
+    nickname: nickname.value, 
+    bio: bio.value,
+    gender: gender.value as 'male' | 'female' | 'other' | null,
     ageGroup: ageGroup.value,
-    gender: gender.value,
     interests: interests.value,
-    bio: bio.value
   };
 
   try {
@@ -55,8 +57,12 @@ const handleRegister = async () => {
     } else {
       errorMessage.value = result.error || '注册失败，请稍后重试';
     }
-  } catch (error) {
-    errorMessage.value = '注册过程中发生错误，请稍后重试';
+  } catch (err) {
+    if (isAxiosError(err) && err.response?.data) {
+      errorMessage.value = err.response.data.error || '注册过程中发生错误，请稍后重试';
+    } else {
+      errorMessage.value = '注册过程中发生未知错误，请稍后重试';
+    }
   } finally {
     loading.value = false;
   }

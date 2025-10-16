@@ -30,6 +30,7 @@ import type {
   // 画廊模块类型
   GalleryItem,
   GalleryItemDetail,
+  DownloadLinkPayload,
   
   // 社群模块类型
   Community,
@@ -171,7 +172,7 @@ export const authService = {
   },
   
   // 密码重置请求
-  resetPasswordRequest: async (data: PasswordResetRequest): Promise<ApiResponse<OperationResponse>> => {
+  resetPasswordRequest: async (data:PasswordResetRequest): Promise<ApiResponse<OperationResponse>> => {
     try {
       const response = await apiClient.post('/auth/forgot-password/send-code/', data);
       return { success: true, data: response.data };
@@ -333,9 +334,10 @@ export const uncollectGalleryWork = async (workId: string): Promise<ApiResponse<
   }
 };
 
-export const downloadGalleryWork = async (workId: string, confirmDeduction: boolean = false): Promise<ApiResponse<OperationResponse>> => {
+export const downloadGalleryWork = async (workId: string, isConfirmed: boolean): Promise<ApiResponse<DownloadLinkPayload>> => {
   try {
-    const response = await apiClient.post(`/gallery/works/${workId}/`, { confirmDeduction });
+    // 同样，在 post 请求时也加上泛型，让 axios 也知道返回类型
+    const response = await apiClient.post<DownloadLinkPayload>(`/gallery/works/${workId}/download/`, { confirm_cost: isConfirmed });
     return { success: true, data: response.data };
   } catch (error) {
     return handleApiError(error as CustomAxiosError);

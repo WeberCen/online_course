@@ -1,42 +1,53 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref ,onUnmounted} from 'vue';
 import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
 import { authService } from '@/services/apiService';
-import type { PasswordResetRequest, PasswordResetConfirm } from '@/types';
+import type { PasswordResetRequest,PasswordResetConfirm } from '@/types';
 
 const router = useRouter();
-const email = ref('');
 const code = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
-const step = ref(1); // 1: 输入邮箱, 2: 输入验证码和新密码
+const step = ref(1); 
 const loading = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const countdown = ref(0);
 let countdownInterval: number | null = null;
+const contactInput = ref('');
 
-// 发送验证码
+
 const sendVerificationCode = async () => {
-  if (!email.value) {
-    errorMessage.value = '请输入邮箱';
+  if (!contactInput.value) {
+    errorMessage.value = '请输入邮箱或手机号';
     return;
   }
 
   loading.value = true;
   errorMessage.value = '';
+  const isEmail = contactInput.value.includes('@'); 
+  const payload: PasswordResetRequest = isEmail 
+    ? { email: contactInput.value } 
+    : { phone: contactInput.value };
+
 
   try {
-    const result = await authService.resetPasswordRequest({ email: email.value });
+    const result = await authService.resetPasswordRequest(payload);
     if (result.success) {
-      successMessage.value = '验证码已发送到您的邮箱，请查收';
+      successMessage.value = '驗證碼已發送到您的帳戶，請查收';
       startCountdown();
       step.value = 2;
     } else {
-      errorMessage.value = result.error || '发送验证码失败，请稍后重试';
+      errorMessage.value = result.error || '發送驗證碼失敗，請稍後重試';
     }
   } catch (error) {
-    errorMessage.value = '发送验证码过程中发生错误，请稍后重试';
+    if (isAxiosError(error) && error.response) {
+      errorMessage.value = error.response.data?.detail || error.response.data?.email?.[0] || '發送失敗，請檢查帳號是否正確或稍後再試';
+    } else {
+      errorMessage.value = '發送驗證碼過程中發生未知錯誤，請檢查網路連接';
+    }
+    console.error(error);
   } finally {
     loading.value = false;
   }
@@ -45,44 +56,57 @@ const sendVerificationCode = async () => {
 // 重置密码
 const resetPassword = async () => {
   if (!code.value || !newPassword.value || !confirmPassword.value) {
-    errorMessage.value = '请填写完整信息';
+    errorMessage.value = '請填寫完整資訊';
     return;
   }
-
   if (newPassword.value !== confirmPassword.value) {
-    errorMessage.value = '两次输入的密码不一致';
+    errorMessage.value = '兩次輸入的密碼不一致';
     return;
   }
 
   loading.value = true;
   errorMessage.value = '';
 
-  const resetData: PasswordResetConfirm = {
-    email: email.value,
+  // 2. 【已修正】只聲明一次 resetData，並根據條件構建
+  let resetData: PasswordResetConfirm;
+  const isEmail = contactInput.value.includes('@');
+
+  const baseData = {
     code: code.value,
-    newPassword: newPassword.value,
-    confirmPassword: confirmPassword.value
+    password: newPassword.value,
+    password2: confirmPassword.value,
   };
 
+  if (isEmail) {
+    resetData = { ...baseData, email: contactInput.value };
+  } else {
+    resetData = { ...baseData, phone: contactInput.value };
+  }
+  
+  // 3. 執行 API 請求
   try {
     const result = await authService.resetPasswordConfirm(resetData);
     if (result.success) {
-      successMessage.value = '密码重置成功，请使用新密码登录';
-      // 重置成功后跳转登录页
+      successMessage.value = '密碼重置成功，請使用新密碼登入';
       setTimeout(() => {
         router.push('/login');
       }, 2000);
     } else {
-      errorMessage.value = result.error || '密码重置失败，请稍后重试';
+      errorMessage.value = result.error || '密碼重置失敗，請稍後重試';
     }
   } catch (error) {
-    errorMessage.value = '密码重置过程中发生错误，请稍后重试';
+    if (isAxiosError(error) && error.response) {
+      errorMessage.value = error.response.data?.detail || error.response.data?.code?.[0] || '密碼重置失敗，請檢查驗證碼或新密碼';
+    } else {
+      errorMessage.value = '密碼重置過程中發生未知錯誤，請檢查網路連接';
+    }
+    console.error(error);
   } finally {
     loading.value = false;
   }
 };
 
-// 倒计时功能
+// 倒計時功能
 const startCountdown = () => {
   countdown.value = 60;
   
@@ -100,16 +124,12 @@ const startCountdown = () => {
   }, 1000) as unknown as number;
 };
 
-// 页面卸载时清除定时器
+// 頁面卸載時清除定時器
 onUnmounted(() => {
   if (countdownInterval) {
     clearInterval(countdownInterval);
   }
 });
-
-const goToLogin = () => {
-  router.push('/login');
-};
 </script>
 
 <template>
@@ -123,13 +143,11 @@ const goToLogin = () => {
       <!-- 第一步：输入邮箱 -->
       <div v-if="step === 1">
         <div class="form-group">
-          <label for="email">邮箱</label>
+          <label for="email">邮箱/ 手机号</label>
           <input
-            id="email"
-            v-model="email"
-            type="email"
-            placeholder="请输入您注册时使用的邮箱"
-          />
+            id="contact"
+            v-model="contactInput" type="text" placeholder="请输入您的邮箱或手机号"
+            />
         </div>
         
         <button 
@@ -192,15 +210,11 @@ const goToLogin = () => {
         </button>
       </div>
       
-      <div class="form-footer">
-        <button class="link-button" @click="goToLogin">返回登录</button>
-      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 添加适当的样式 */
 .forgot-password-container {
   display: flex;
   justify-content: center;

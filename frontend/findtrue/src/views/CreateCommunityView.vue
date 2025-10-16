@@ -46,10 +46,15 @@ onMounted(async () => {
   if (isEditMode.value && communityId.value) {
     try {
       const response = await getCommunityDetail(communityId.value);
-      const { name, description } = response.data;
-      communityData.name = name;
-      communityData.description = description;
-      // 注意：旧的 coverImage URL 我们可以在 data 中额外存储用于预览
+      if (response.success) {
+        const { name, description } = response.data;
+        communityData.name = name;
+        communityData.description = description;
+        // 注意：旧的 coverImage URL 我们可以在 data 中额外存储用于预览
+      } else {
+        error.value = response.error || '加载社群详情失败，请稍后再试。';
+        console.error('API Error:', response.error);
+      }
     } catch (err) {
     console.error("操作失败:", err);
     if (isAxiosError(err) && err.response?.status === 403) {
@@ -89,7 +94,12 @@ const submitForm = async () => {
       response = await createCommunity(formData);
       alert('社群创建成功！');
     }
-    router.push({ name: 'community-posts-list', params: { communityId: response.data.id } });
+    if (response.success) {
+      router.push({ name: 'community-posts-list', params: { communityId: String(response.data.id) } });
+    } else {
+      error.value = response.error || '操作失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     console.error("操作失败:", err);
     if (isAxiosError(err) && err.response?.status === 403) {

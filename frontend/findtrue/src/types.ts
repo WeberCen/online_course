@@ -6,11 +6,9 @@
 // =======          响应类型定义          =======
 // ===============================================
 
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
+export type ApiResponse<T> =
+  | { success: true; data: T }
+  | { success: false; error?: string };
 
 // ===============================================
 // =======          核心基础类型          =======
@@ -62,27 +60,31 @@ export interface RegisterData {
   phone: string;
   password: string;
   password2: string;
-  code?: string;
+  nickname?: string;
+  avatarUrl?: string;
+  bio?: string;
+  gender?: 'male' | 'female' | 'other' | null; 
+  ageGroup?: string | null;
+  interests?: string[];
 }
 
 export interface LoginData {
-  username?: string;
-  email?: string;
-  phone?: string;
+  identifier: string;
   password: string;
 }
 
-export interface PasswordResetRequest {
-  email: string;
-}
-
-export interface PasswordResetConfirm {
-  email: string;
+export type PasswordResetRequest = 
+  | { email: string; phone?: never; } 
+  | { email?: never; phone: string; };
+interface PasswordResetConfirmBase {
   code: string;
   password: string;
   password2: string;
 }
-
+export type PasswordResetConfirm = PasswordResetConfirmBase & (
+  | { email: string; phone?: never; }
+  | { email?: never; phone: string; }
+);
 
 // ===============================================
 // =======          课程模块类型          =======
@@ -131,10 +133,10 @@ export interface Exercise {
 
 
 export interface Progress {
-  completedChapters: number;
-  totalChapters: number;
+  completed_exercises: number;
+  total_exercises: number;
   progress_percentage: number;
-  next_chapter_id?: number | null; // 可选，因为课程可能已全部完成
+  next_chapter_id: number | null; // 可选，因为课程可能已全部完成
 }
 
 export interface SubmissionResult {
@@ -164,6 +166,12 @@ export interface GalleryItemDetail extends GalleryItem {
   is_downloaded: boolean;
   workFile: string;
 }
+
+export interface DownloadLinkPayload {
+  downloadUrl: string;
+}
+
+
 // ===============================================
 // =======          社群模块类型          =======
 // ===============================================
@@ -276,42 +284,6 @@ export interface VipPlan {
     name: string;
     duration_days: number;
     price_points: number;
-}
-
-// ===============================================
-// =======          认证相关类型          =======
-// ===============================================
-export interface LoginResponse {
-  token: string;
-  refreshToken: string;
-  user: User;
-}
-
-export interface LoginData {
-  username?: string;
-  email?: string;
-  phone?: string;
-  password: string;
-}
-
-export interface RegisterData {
-  username: string;
-  email: string;
-  phone: string;
-  password: string;
-  password2: string;
-  code?: string;
-}
-
-export interface PasswordResetRequest {
-  email: string;
-}
-
-export interface PasswordResetConfirm {
-  email: string;
-  code: string;
-  password: string;
-  password2: string;
 }
 
 // ===============================================

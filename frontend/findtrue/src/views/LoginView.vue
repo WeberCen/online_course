@@ -39,6 +39,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { isAxiosError } from 'axios';
 import { authService } from '@/services/apiService';
 import type { LoginData } from '@/types';
 
@@ -71,7 +72,11 @@ const handleLogin = async () => {
       errorMessage.value = result.error || '登录失败，请检查您的账号和密码';
     }
   } catch (error) {
-    errorMessage.value = '登录过程中发生错误，请稍后重试';
+    if (isAxiosError(error) && error.response) {
+      errorMessage.value = error.response.data?.detail || error.response.data?.email?.[0] || error.response.data?.phone?.[0] || '登录过程中发生错误，请稍后重试';
+    } else {
+      errorMessage.value = '登录过程中发生未知错误，请稍后重试';
+    }
   } finally {
     loading.value = false;
   }

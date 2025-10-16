@@ -30,7 +30,12 @@ onMounted(async () => {
   const threadId = route.params.threadId as string;
   try {
     const response = await getMessageThreadDetail(threadId);
-    thread.value = response.data;
+    if (response.success) {
+      thread.value = response.data;
+    } else {
+      error.value = response.error || '加载会话内容失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = "无法加载会话内容。";
     console.error(err);

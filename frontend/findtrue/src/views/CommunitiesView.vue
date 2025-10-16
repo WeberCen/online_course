@@ -33,7 +33,12 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   try {
     const response = await getCommunities();
-    communities.value = response.data;
+    if (response.success) {
+      communities.value = response.data;
+    } else {
+      error.value = response.error || '加载社群板块失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载社群板块，请稍后再试。';
     console.error(err);

@@ -46,7 +46,12 @@ const submitPost = async () => {
   error.value = null;
   try {
     const response = await createCommunityPost(communityId, post);
-    router.push({ name: 'community-post-detail', params: { communityId: communityId, postId: response.data.id } });
+    if (response.success) {
+      router.push({ name: 'community-post-detail', params: { communityId: communityId, postId: String(response.data.id) } });
+    } else {
+      error.value = response.error || '发布失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     console.error("发帖失败:", err);
     if (isAxiosError(err) && err.response?.data) {

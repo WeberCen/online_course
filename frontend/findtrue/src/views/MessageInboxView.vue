@@ -37,7 +37,12 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   try {
     const response = await getMessageThreads();
-    threads.value = response.data;
+    if (response.success) {
+      threads.value = response.data;
+    } else {
+      error.value = response.error || '加载消息列表失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = "无法加载消息列表，请稍后再试。";
     console.error(err);

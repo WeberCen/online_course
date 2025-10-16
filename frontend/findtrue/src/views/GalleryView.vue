@@ -30,7 +30,12 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   try {
     const response = await getGalleryWorks();
-    works.value = response.data;
+    if (response.success) {
+      works.value = response.data;
+    } else {
+      error.value = response.error || '加载画廊作品失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载画廊作品，请稍后再试。';
     console.error(err);

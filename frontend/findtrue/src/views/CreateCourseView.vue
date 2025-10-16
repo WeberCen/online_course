@@ -62,11 +62,16 @@ onMounted(async () => {
     try {
       const response = await getCourseDetail(courseId.value); // ...就去后端获取课程数据
       // 将获取到的数据，填充到我们的表单中
-      const { title, description, pricePoints, is_vip_free } = response.data;
-      courseData.title = title;
-      courseData.description = description;
-      courseData.pricePoints = pricePoints;
-      courseData.is_vip_free = is_vip_free;
+      if (response.success) {
+        const { title, description, pricePoints, is_vip_free } = response.data;
+        courseData.title = title;
+        courseData.description = description;
+        courseData.pricePoints = pricePoints;
+        courseData.is_vip_free = is_vip_free;
+      } else {
+        error.value = response.error || '加载课程详情失败，请稍后再试。';
+        console.error('API Error:', response.error);
+      }
     } catch (err) {
     console.error("读取失败:", err);
     if (isAxiosError(err) && err.response?.status === 403) {
@@ -109,7 +114,12 @@ const submitForm = async () => {
       response = await createCourse(formData);
       alert('课程创建成功！');
     }
-    router.push({ name: 'course-detail', params: { id: response.data.id } });
+    if (response.success) {
+      router.push({ name: 'course-detail', params: { id: String(response.data.id) } });
+    } else {
+      error.value = response.error || '操作失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     console.error("创建失败:", err);
     if (isAxiosError(err) && err.response?.status === 403) {

@@ -54,7 +54,12 @@ onMounted(async () => {
   const workId = route.params.id as string;
   try {
     const response = await getGalleryWorkDetail(workId);
-    work.value = response.data;
+    if (response.success) {
+      work.value = response.data;
+    } else {
+      error.value = response.error || '加载作品详情失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载作品详情。';
     console.error(err);
@@ -85,7 +90,7 @@ const handleUncollect = async () => {
     work.value.is_collected = false;
   } catch (err) {
     if (isAxiosError(err) && err.response?.status === 409) {
-        work.value.is_downloaded = true;
+        work.value.is_collected = true;
         alert('您已经取消了收藏。');
     } else {
         alert("操作失败，请重试。");
@@ -97,19 +102,25 @@ const handleUncollect = async () => {
 const handleDownload = async (isConfirmedOrRedownload: boolean = false) => {
   if (!workId) return;
 
-  try {
-    // 直接将参数传递给 API 调用
-    const response = await downloadGalleryWork(workId, isConfirmedOrRedownload);
- 
-    // 逻辑简化：如果成功，总是处理下载链接
-    alert("获取下载链接成功！");
-    window.location.href = response.data.downloadUrl;
-    if (work.value) work.value.is_downloaded = true;
-  } catch (err) {
-    if (isAxiosError(err) && err.response) {
-      const data = err.response.data;
-      
-      // 仅在首次下载（isConfirmedOrRedownload 为 false）时才需要确认
+  if (!isConfirmedOrRedownload) {
+    // 首次下载，直接调用 API
+    try {
+      // 直接将参数传递给 API 调用
+      const response = await downloadGalleryWork(workId, isConfirmedOrRedownload);
+      if (response.success) {
+        // 逻辑简化：如果成功，总是处理下载链接
+        alert("获取下载链接成功！");
+        window.location.href = response.data.downloadUrl;
+        if (work.value) work.value.is_downloaded = true;
+      } else {
+        error.value = response.error || '下载作品失败，请稍后再试。';
+        console.error('API Error:', response.error);
+      }
+    } catch (err) {
+      if (isAxiosError(err) && err.response) {
+        const data = err.response.data;
+        
+        // 仅在首次下载（isConfirmedOrRedownload 为 false）时才需要确认
       if (err.response.status === 409 && data.confirmationRequired && !isConfirmedOrRedownload) {
        const confirmed = window.confirm(`本次下载需要扣除 ${data.pointsToDeduct} 积分，您确定吗？`);
          if (confirmed) {
@@ -137,7 +148,7 @@ const handleDownload = async (isConfirmedOrRedownload: boolean = false) => {
       console.error(err);
     }
    }
-};
+}};
 
 </script>
 

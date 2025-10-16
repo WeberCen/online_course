@@ -423,41 +423,65 @@ class CourseCollectionView(generics.GenericAPIView):
 
 class CourseProgressView(APIView):
     permission_classes = [IsStudent]
-
     def get(self, request, pk):
         try:
-            # 检查用户是否订阅了该课程
-            if not Subscription.objects.filter(user=request.user, course_id=pk).exists():
-                return Response({"error": "用户未订阅本课程"}, status=status.HTTP_403_FORBIDDEN)
+            # 檢查課程是否存在
+            course = Course.objects.get(pk=pk)
 
-            # 获取课程的总练习数
-            total_exercises = Exercise.objects.filter(chapter__course_id=pk).count()
+            # 檢查用戶是否訂閱了該課程
+            if not Subscription.objects.filter(user=request.user, course=course).exists():
+                return Response({"error": "用戶未訂閱本課程"}, status=status.HTTP_403_FORBIDDEN)
 
+            # 獲取課程的總練習數 (您的原始邏輯，是正確的)
+            total_exercises = Exercise.objects.filter(chapter__course=course).count()
+
+            # 如果課程沒有練習題，直接返回完成狀態
             if total_exercises == 0:
-                # 如果课程没有练习，进度为100%
-                return Response({"progress": 100})
+                return Response({
+                    "completed_exercises": 0,
+                    "total_exercises": 0,
+                    "progress_percentage": 100, 
+                    "next_chapter_id": None, 
+                })
 
-            # 获取用户已完成的独立练习数
-            completed_exercises_count = UserExerciseSubmission.objects.filter(
+            # 獲取用戶已正確完成的獨立練習數 (您的原始邏輯，是正確的)
+            completed_exercises = UserExerciseSubmission.objects.filter(
                 user=request.user,
-                exercise__chapter__course_id=pk,
+                exercise__chapter__course=course,
                 is_correct=True
             ).values('exercise').distinct().count()
 
-            # 计算进度百分比
-            progress = (completed_exercises_count / total_exercises) * 100 if total_exercises > 0 else 100
+            # 計算進度百分比
+            progress_percentage = round((completed_exercises / total_exercises) * 100)
 
-            return Response({"progress": round(progress)})
+            # 【關鍵修改】構建前端期望的完整資料結構
+            progress_data = {
+                "completed_exercises": completed_exercises,
+                "total_exercises": total_exercises,
+                "progress_percentage": progress_percentage,              
+                "next_chapter_id": self.get_next_chapter_id(request.user, course)
+            }
+
+            return Response(progress_data, status=status.HTTP_200_OK)
 
         except Course.DoesNotExist:
-            return Response({"error": "课程未找到"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "課程未找到"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            # 返回更详细的错误信息以方便调试
-            return Response({
-                "error": "获取课程进度时发生内部服务器错误。",
-                "exception_type": str(type(e)),
-                "exception_message": str(e),
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            # 為了安全，生產環境中不建議返回詳細的 exception_message
+            return Response({"error": "獲取課程進度時發生內部伺服器錯誤。"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def get_next_chapter_id(self, user, course):
+         completed_chapter_ids = UserChapterCompletion.objects.filter(
+             user=user, chapter__course=course
+         ).values_list('chapter_id', flat=True)
+        
+         next_chapter = Chapter.objects.filter(
+             course=course
+         ).exclude( 
+             id__in=completed_chapter_ids
+         ).order_by('order').first()
+        
+         return next_chapter.id if next_chapter else None
 
 
 class ExerciseSubmissionView(generics.GenericAPIView):

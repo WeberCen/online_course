@@ -35,7 +35,12 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   try {
     const response = await getCourses();
-    courses.value = response.data;
+    if (response.success) {
+      courses.value = response.data;
+    } else {
+      error.value = response.error || '加载课程列表失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载课程，请稍后再试。';
     console.error(err);

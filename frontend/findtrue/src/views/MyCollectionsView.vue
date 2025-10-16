@@ -42,7 +42,12 @@ const error = ref<string | null>(null);
 onMounted(async () => {
   try {
     const response = await getMyCollections();
-    collections.value = response.data;
+    if (response.success) {
+      collections.value = response.data;
+    } else {
+      error.value = response.error || '加载收藏列表失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = "无法加载收藏列表。";
     console.error(err);

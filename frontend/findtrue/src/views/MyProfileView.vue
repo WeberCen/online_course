@@ -107,15 +107,20 @@ const allInterests = ['代码学习', '思维训练', '游戏开发', '网页爬
 onMounted(async () => {
   try {
     const response = await getMyProfile();
-    user.value = response.data;
+    if (response.success) {
+      user.value = response.data;
     
     // 将获取到的数据同步到可编辑对象中
-    editableProfile.nickname = user.value.nickname;
-    editableProfile.bio = user.value.bio; // 新增
-    editableProfile.gender = user.value.gender;
-    editableProfile.ageGroup = user.value.ageGroup;
-    editableProfile.interests = user.value.interests || [];
-  } catch (err) {
+    editableProfile.nickname = response.data.nickname;
+    editableProfile.bio = response.data.bio; 
+    editableProfile.gender = response.data.gender;
+    editableProfile.ageGroup = response.data.ageGroup;
+    editableProfile.interests = response.data.interests || [];
+  } else{
+    error.value = response.error || "無法加載您的個人信息。";
+    console.error('API Error:', response.error);
+    }
+  }catch (err) {
     error.value = "无法加载您的个人信息，请稍后重试。";
     console.error(err);
   } finally {
@@ -127,9 +132,15 @@ const updateProfile = async () => {
   isSaving.value = true;
   try {
     const response = await updateMyProfile(editableProfile);
-    user.value = response.data; // 更新页面显示
+    if (response.success) {
+      user.value = response.data; 
+
     alert('个人信息更新成功！');
-  } catch (err) {
+  } else {
+      // 處理業務邏輯上的失敗（例如，暱稱已被佔用）
+      alert(`更新失敗: ${response.error || '未知錯誤'}`);
+    }
+  }catch (err) {
     console.error("更新失败:", err);
     if (isAxiosError(err) && err.response?.data) {
       alert("更新失败: " + JSON.stringify(err.response.data));

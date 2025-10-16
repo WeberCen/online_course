@@ -74,12 +74,17 @@ onMounted(async () => {
   if (isEditMode.value && itemId.value) {
     try {
       const response = await getGalleryWorkDetail(itemId.value);
-      const { title, description, version, requiredPoints, is_vip_free } = response.data;
-      itemData.title = title;
-      itemData.description = description;
-      itemData.version = version;
-      itemData.requiredPoints = requiredPoints;
-      itemData.is_vip_free = is_vip_free;
+      if (response.success) {
+        const { title, description, version, requiredPoints, is_vip_free } = response.data;
+        itemData.title = title;
+        itemData.description = description;
+        itemData.version = version;
+        itemData.requiredPoints = requiredPoints;
+        itemData.is_vip_free = is_vip_free;
+      } else {
+        error.value = response.error || '加载作品详情失败，请稍后再试。';
+        console.error('API Error:', response.error);
+      }
     } catch (err) {
       error.value = "无法加载作品数据进行编辑。";
       console.error(err);
@@ -136,7 +141,12 @@ const submitForm = async () => {
       response = await createGalleryItem(formData);
       alert('作品上传成功，已提交审核！');
     }
-    router.push({ name: 'gallery-detail', params: { id: response.data.id } });
+    if (response.success) {
+      router.push({ name: 'gallery-detail', params: { id: String(response.data.id) } });
+    } else {
+      error.value = response.error || '操作失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     console.error("操作失败:", err);
     if (isAxiosError(err) && err.response?.status === 403) {

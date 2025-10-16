@@ -54,7 +54,12 @@ const handleSearch = () => {
     searchTimeout = window.setTimeout(async () => {
       try {
         const response = await searchUsers(recipientSearch.value);
-        searchResults.value = response.data;
+        if (response.success) {
+          searchResults.value = response.data;
+        } else {
+          error.value = response.error || '搜索用户失败，请稍后再试。';
+          console.error('API Error:', response.error);
+        }
         
       } catch (err) {
         console.error("用户搜索失败:", err);

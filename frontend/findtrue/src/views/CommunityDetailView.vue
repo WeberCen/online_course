@@ -69,7 +69,12 @@ const fetchPost = async () => {
   try {
     loading.value = true;
     const response = await getCommunityPostDetail(communityId, postId);
-    post.value = response.data;
+    if (response.success) {
+      post.value = response.data;
+    } else {
+      error.value = response.error || '加载帖子详情失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载帖子详情。';
     console.error(err);
@@ -98,8 +103,13 @@ const handleLikePost = async () => {
   if (!postId) return;
   try {
     const response = await likeCommunityPost(postId);
-    alert(`操作成功: ${response.data.status}`);
-    await fetchPost();
+    if (response.success) {
+      alert(`操作成功: ${response.data.status}`);
+      await fetchPost();
+    } else {
+      error.value = response.error || '点赞失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch(err) {
     console.error("点赞失败:", err); // 记录完整的错误信息以供调试
 

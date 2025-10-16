@@ -47,7 +47,12 @@ onMounted(async () => {
   }
   try {
     const response = await getPostsForCommunity(communityId);
-    posts.value = response.data;
+    if (response.success) {
+      posts.value = response.data;
+    } else {
+      error.value = response.error || '加载帖子列表失败，请稍后再试。';
+      console.error('API Error:', response.error);
+    }
   } catch (err) {
     error.value = '无法加载帖子列表，请稍后再试。';
     console.error(err);
