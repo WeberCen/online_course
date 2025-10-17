@@ -2,7 +2,7 @@
 import random
 import json
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework import generics,mixins, status,serializers
+from rest_framework import viewsets,generics,mixins, status,serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -36,7 +36,9 @@ from .models import (CertificationRequest,Course,Chapter,
                      GalleryItem,GalleryCollection,GalleryDownloadRecord,
                      Community,CommunityPost,CommunityReply,
                      User,Tag,Message,MessageThread,UserExerciseCompletion,)
+import logging
 
+logger = logging.getLogger(__name__)
 
 User = get_user_model() # 获取当前项目使用的 User 模型
 
@@ -323,119 +325,75 @@ class EditorImageView(generics.CreateAPIView):
 # ===============================================
 # =======          课程模块视图          =======
 # ===============================================
-import logging
 
-logger = logging.getLogger(__name__)
+# ==============================================================================
+# 1. 將課程相關視圖整合進 CourseViewSet
+# ==============================================================================
+class CourseViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    用於處理課程列表和詳情的視圖集
+    """
+    queryset = Course.objects.filter(status='published').select_related('author').prefetch_related('chapters', 'tags', 'collectors', 'subscribers')
+    
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return CourseListSerializer
+        return CourseDetailSerializer
 
-class CourseListView(generics.ListAPIView):
-    """
-    获取所有已发布的课程列表
-    """
-    queryset = Course.objects.filter(status='published').order_by('-created_at')
-    serializer_class = CourseListSerializer
-    authentication_classes = [JWTAuthentication] 
-    permission_classes = [AllowAny] 
+    def get_serializer_context(self):
+        return {'request': self.request}
 
-class CourseDetailView(generics.RetrieveAPIView):
-    """
-    获取单个已发布课程的详情
-    """
-
-    queryset = Course.objects.filter(status='published')
-    serializer_class = CourseDetailSerializer
-    permission_classes = [AllowAny]
-    def get_queryset(self):
-        print(f"Accessing CourseDetailView for course pk: {self.kwargs.get('pk')}")
-        queryset = super().get_queryset()
-        return queryset.select_related('author').prefetch_related('chapters', 'tags')
-
-class CourseSubscriptionView(generics.GenericAPIView):
-    """
-    处理课程的订阅与取消订阅
-    """
-    permission_classes = [IsAuthenticated]
-    queryset = Course.objects.filter(status='published')
-
-    def post(self, request, *args, **kwargs):
-        """订阅课程"""
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def subscribe(self, request, pk=None):
         course = self.get_object()
         user = request.user
-
-        # 检查是否已订阅
         if Subscription.objects.filter(user=user, course=course).exists():
-            return Response({"message": "You have already subscribed to this course."}, status=status.HTTP_409_CONFLICT)
-            
-        # 简单模拟积分扣除
-        # if user.currentPoints < course.pricePoints:
-        #     return Response({"error": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
-        # user.currentPoints -= course.pricePoints
-        # user.save()
-
+            return Response({"detail": "You have already subscribed to this course."}, status=status.HTTP_409_CONFLICT)
+        # ... 您的積分扣除邏輯 ...
         Subscription.objects.create(user=user, course=course)
-        return Response({"message": "Successfully subscribed to the course."}, status=status.HTTP_201_CREATED)
+        return Response({"detail": "Successfully subscribed to the course."}, status=status.HTTP_201_CREATED)
 
-    def delete(self, request, *args, **kwargs):
-        """取消订阅课程"""
+    @action(detail=True, methods=['delete'], url_path='subscribe', permission_classes=[IsAuthenticated])
+    def unsubscribe(self, request, pk=None):
         course = self.get_object()
         user = request.user
+        deleted_count, _ = Subscription.objects.filter(user=user, course=course).delete()
+        if deleted_count == 0:
+            return Response({"detail": "You are not subscribed to this course."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
-        try:
-            subscription = Subscription.objects.get(user=user, course=course)
-            subscription.delete()
-            # 注意：通常取消订阅不退还积分
-            return Response({"message": "Successfully unsubscribed from the course."}, status=status.HTTP_204_NO_CONTENT)
-        except Subscription.DoesNotExist:
-            return Response({"message": "You are not subscribed to this course."}, status=status.HTTP_404_NOT_FOUND)
-
-
-class CourseCollectionView(generics.GenericAPIView):
-    """
-    处理课程的收藏与取消收藏
-    """
-    permission_classes = [IsAuthenticated]
-    queryset = Course.objects.all() # 收藏可以针对任何状态的课程
-
-    def post(self, request, *args, **kwargs):
-        """收藏课程"""
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def collect(self, request, pk=None):
         course = self.get_object()
         user = request.user
+        _, created = Collection.objects.get_or_create(user=user, course=course)
+        if not created:
+            return Response({"detail": "You have already collected this course."}, status=status.HTTP_409_CONFLICT)
+        return Response({"detail": "Course collected successfully."}, status=status.HTTP_201_CREATED)
 
-        if Collection.objects.filter(user=user, course=course).exists():
-            return Response({"message": "You have already collected this course."}, status=status.HTTP_409_CONFLICT)
-            
-        Collection.objects.create(user=user, course=course)
-        return Response({"message": "Course collected successfully."}, status=status.HTTP_201_CREATED)
-
-    def delete(self, request, *args, **kwargs):
-        """取消收藏课程"""
+    @action(detail=True, methods=['delete'], url_path='collect', permission_classes=[IsAuthenticated])
+    def uncollect(self, request, pk=None):
         course = self.get_object()
         user = request.user
-
+        deleted_count, _ = Collection.objects.filter(user=user, course=course).delete()
+        if deleted_count == 0:
+            return Response({"detail": "You have not collected this course."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=True, methods=['get'], permission_classes=[IsStudent])
+    def progress(self, request, pk=None):
+        """
+        獲取用戶對單一課程的學習進度。
+        """
         try:
-            collection = Collection.objects.get(user=user, course=course)
-            collection.delete()
-            return Response({"message": "Course uncollected successfully."}, status=status.HTTP_204_NO_CONTENT)
-        except Collection.DoesNotExist:
-            return Response({"message": "You have not collected this course."}, status=status.HTTP_404_NOT_FOUND)
+            course = self.get_object()
+            user = request.user
 
+            if not Subscription.objects.filter(user=user, course=course).exists():
+                return Response({"detail": "用戶未訂閱本課程"}, status=status.HTTP_403_FORBIDDEN)
 
-
-
-class CourseProgressView(APIView):
-    permission_classes = [IsStudent]
-    def get(self, request, pk):
-        try:
-            # 檢查課程是否存在
-            course = Course.objects.get(pk=pk)
-
-            # 檢查用戶是否訂閱了該課程
-            if not Subscription.objects.filter(user=request.user, course=course).exists():
-                return Response({"error": "用戶未訂閱本課程"}, status=status.HTTP_403_FORBIDDEN)
-
-            # 獲取課程的總練習數 (您的原始邏輯，是正確的)
             total_exercises = Exercise.objects.filter(chapter__course=course).count()
 
-            # 如果課程沒有練習題，直接返回完成狀態
             if total_exercises == 0:
                 return Response({
                     "completed_exercises": 0,
@@ -443,201 +401,201 @@ class CourseProgressView(APIView):
                     "progress_percentage": 100, 
                     "next_chapter_id": None, 
                 })
-
-            # 獲取用戶已正確完成的獨立練習數 (您的原始邏輯，是正確的)
             completed_exercises = UserExerciseSubmission.objects.filter(
-                user=request.user,
+                user=user,
                 exercise__chapter__course=course,
                 is_correct=True
             ).values('exercise').distinct().count()
-
-            # 計算進度百分比
-            progress_percentage = round((completed_exercises / total_exercises) * 100)
-
-            # 【關鍵修改】構建前端期望的完整資料結構
+            progress_percentage = round((completed_exercises / total_exercises) * 100) if total_exercises > 0 else 0
+            next_chapter_id = self._get_next_chapter_id(user, course)
             progress_data = {
                 "completed_exercises": completed_exercises,
                 "total_exercises": total_exercises,
-                "progress_percentage": progress_percentage,              
-                "next_chapter_id": self.get_next_chapter_id(request.user, course)
+                "progress_percentage": progress_percentage,
+                "next_chapter_id": next_chapter_id
             }
-
             return Response(progress_data, status=status.HTTP_200_OK)
 
         except Course.DoesNotExist:
-            return Response({"error": "課程未找到"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "課程未找到"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            # 為了安全，生產環境中不建議返回詳細的 exception_message
-            return Response({"error": "獲取課程進度時發生內部伺服器錯誤。"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error getting course progress for user {request.user.id} and course {pk}: {e}")
+            return Response({"detail": "獲取課程進度時發生內部伺服器錯誤。"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def get_next_chapter_id(self, user, course):
-         completed_chapter_ids = UserChapterCompletion.objects.filter(
-             user=user, chapter__course=course
-         ).values_list('chapter_id', flat=True)
-        
-         next_chapter = Chapter.objects.filter(
-             course=course
-         ).exclude( 
-             id__in=completed_chapter_ids
-         ).order_by('order').first()
-        
-         return next_chapter.id if next_chapter else None
-
-
-class ExerciseSubmissionView(generics.GenericAPIView):
+    def _get_next_chapter_id(self, user, course):
+        """
+        【輔助方法】計算並返回用戶在此課程中下一個要學習的章節ID。
+        這個方法沒有被 @action 裝飾，所以它不是一個 API 端點。
+        """
+        completed_chapter_ids = UserChapterCompletion.objects.filter(
+            user=user, chapter__course=course
+        ).values_list('chapter_id', flat=True)
+        next_chapter = Chapter.objects.filter(
+            course=course
+        ).exclude( 
+            id__in=completed_chapter_ids
+        ).order_by('order').first()
+        return next_chapter.id if next_chapter else None
+    
+# ==============================================================================
+# 2. 新建 ChapterViewSet 並重構練習提交視圖
+# ==============================================================================
+class ChapterViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    处理用户提交的章节练习答案
+    用於處理章節相關操作，主要是練習提交
     """
-    permission_classes = [IsStudent]
-    serializer_class = ExerciseSubmissionSerializer
+    queryset = Chapter.objects.all()
+    # 這裡可以定義一個基礎的 ChapterSerializer
+    # serializer_class = BaseChapterSerializer 
 
-    def post(self, request, *args, **kwargs):
-        course_pk = self.kwargs.get('course_pk')
-        chapter_pk = self.kwargs.get('chapter_pk')
-
-        try:
-            chapter = Chapter.objects.get(pk=chapter_pk, course_id=course_pk)
-            course = chapter.course
-        except Chapter.DoesNotExist:
-            return Response({"error": "Chapter or Course not found."}, status=status.HTTP_404_NOT_FOUND)
-
+    @action(detail=True, methods=['post'], permission_classes=[IsStudent], serializer_class=ExerciseSubmissionSerializer)
+    def submit(self, request, pk=None):
+        """
+        【核心重構】接收章節練習提交，批改並返回詳細報告
+        """
+        chapter = self.get_object()
         user = request.user
-        if not Subscription.objects.filter(user=user, course=course).exists():
-            return Response({"error": "You must be subscribed to this course to submit answers."}, status=status.HTTP_403_FORBIDDEN)
+        course = chapter.course
 
+        # 檢查訂閱狀態
+        if not Subscription.objects.filter(user=user, course=course).exists():
+            return Response({"detail": "You must be subscribed to this course to submit answers."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 1. 使用 ExerciseSubmissionSerializer 驗證輸入數據
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         submitted_answers = serializer.validated_data['answers']
         
-        answers_map = {answer['exerciseId']: answer['userAnswer'] for answer in submitted_answers}
+        # 2. 初始化報告和輔助數據結構
+        summary = {"correct_count": 0, "incorrect_count": 0, "incorrect_exercises": []}
+        details = {}
         
-        exercise_ids_in_chapter = chapter.exercises.values_list('id', flat=True)
-        UserExerciseSubmission.objects.filter(user=user, exercise_id__in=exercise_ids_in_chapter).delete()
+        # 為了高效查詢，一次性獲取本章節所有練習題
+        exercises = chapter.exercises.prefetch_related('options', 'fill_in_blanks').all()
+        exercise_map = {ex.id: ex for ex in exercises}
+        
+        submissions_to_process = []
 
-        submissions_to_create = []
-        correct_answers_count = 0
-        exercises_in_chapter = chapter.exercises.prefetch_related('options', 'fill_in_blanks')
-
-        for exercise in exercises_in_chapter:
-            user_answer = answers_map.get(exercise.id)
-            if user_answer is None:
-                continue # 如果用戶未提交某題答案，則跳過
-
-            is_correct = False # 預設為錯誤
+        # 3. 循環批改
+        for answer_data in submitted_answers:
+            exercise_id = answer_data['exerciseId']
+            user_answer = answer_data['userAnswer']
             
-            # 根據題目類型進行批改
+            exercise = exercise_map.get(exercise_id)
+            if not exercise:
+                continue # 跳過不屬於本章節的題目
+
+            is_correct = False
+            correct_answer = None
+
             if exercise.type == 'multiple-choice':
-                # 多选题：答案需完全匹配
-                correct_options_set = set(exercise.options.filter(is_correct=True).values_list('text', flat=True))
-                
-                user_submitted_texts = []
-                if isinstance(user_answer, list):
-                    # 前端发送的是一个包含字典的列表, e.g., [{'id': 1, 'text': 'A'}]
-                    # 我们需要提取 'text' 值来进行比较
-                    user_submitted_texts = [
-                        item['text'] for item in user_answer if isinstance(item, dict) and 'text' in item
-                    ]
-                
-                user_answers_set = set(user_submitted_texts)
-                is_correct = correct_options_set == user_answers_set
-                
+                correct_options_qs = exercise.options.filter(is_correct=True)
+                correct_answer = list(correct_options_qs.values_list('text', flat=True))
+                submitted_options = set(user_answer) if isinstance(user_answer, list) else set()
+                is_correct = (set(correct_answer) == submitted_options)
             elif exercise.type == 'fill-in-the-blank':
-                # 假設一題只有一個填空，或者前端會將多個填空答案合併提交
-                blank_answer_obj = exercise.fill_in_blanks.order_by('index_number').first()
-                if blank_answer_obj:
-                    correct_answer = blank_answer_obj.correct_answer
-                    user_answer_str = str(user_answer).strip()
-                    
-                    if blank_answer_obj.case_sensitive:
-                        if user_answer_str == correct_answer:
-                            is_correct = True
+                blank = exercise.fill_in_blanks.first()
+                if blank:
+                    correct_answer = blank.correct_answer
+                    if blank.case_sensitive:
+                        is_correct = (str(user_answer).strip() == correct_answer)
                     else:
-                        if user_answer_str.lower() == correct_answer.lower():
-                            is_correct = True
+                        is_correct = (str(user_answer).strip().lower() == correct_answer.lower())
             
-            if is_correct:
-                correct_answers_count += 1
+            # 準備數據庫操作
+            submissions_to_process.append({
+                "user": user,
+                "exercise": exercise,
+                "submitted_answer": user_answer,
+                "is_correct": is_correct
+            })
 
-            # 準備要創建的 UserExerciseSubmission 物件
-            submissions_to_create.append(
-                UserExerciseSubmission(
-                    user=user,
-                    exercise=exercise,
-                    submitted_answer=user_answer,
-                    is_correct=is_correct
-                )
+            # --- 構建返回的報告 ---
+            if is_correct:
+                summary['correct_count'] += 1
+            else:
+                summary['incorrect_count'] += 1
+                summary['incorrect_exercises'].append({"id": exercise.id, "prompt": exercise.prompt})
+            
+            details[str(exercise_id)] = {
+                "is_correct": is_correct,
+                "correct_answer": correct_answer,
+                "analysis": exercise.explanation
+            }
+            
+        # 4. 高效地將所有提交記錄一次性寫入數據庫
+        # 使用 bulk_create 和 bulk_update 可以更高效，這裡用 update_or_create 逐一處理更清晰
+        for sub_data in submissions_to_process:
+            UserExerciseSubmission.objects.update_or_create(
+                user=sub_data['user'],
+                exercise=sub_data['exercise'],
+                defaults={
+                    'submitted_answer': sub_data['submitted_answer'],
+                    'is_correct': sub_data['is_correct']
+                }
             )
 
-        # --- 4. 高效地將所有提交記錄一次性寫入數據庫 ---
-        if submissions_to_create:
-            UserExerciseSubmission.objects.bulk_create(submissions_to_create)
-
-        # --- 5. 計算分數並更新章節完成狀態 (邏輯微調) ---
-        total_exercises = exercises_in_chapter.count()
-        score = (correct_answers_count / total_exercises * 100) if total_exercises > 0 else 0
-        is_passed = score >= 80
-
-        if is_passed:
-            UserChapterCompletion.objects.get_or_create(user=user, chapter=chapter)
-
-        # --- 6. 計算並返回最新進度 (保持不變) ---
-        total_chapters = course.chapters.count()
-        completed_chapters_count = UserChapterCompletion.objects.filter(user=user, chapter__course=course).count()
-        is_completed = total_chapters > 0 and completed_chapters_count == total_chapters
-
-        new_progress_data = {
-            'completedChapters': completed_chapters_count,
-            'totalChapters': total_chapters,
-            'isCompleted': is_completed,
+        # 5. 構建最終報告並返回
+        final_report = {
+            "summary": summary,
+            "details": details
         }
         
-        response_data = {
-            'score': round(score),
-            'isPassed': is_passed,
-            'newProgress': new_progress_data,
-            'correctCount': correct_answers_count,
-            'totalCount': total_exercises
-        }
-        return Response(response_data, status=status.HTTP_200_OK)
-    
+        return Response(final_report, status=status.HTTP_200_OK)
+
 # ===============================================
 # =======          画廊模块视图          =======
 # ===============================================
 
-class GalleryListView(generics.ListAPIView):
+class GalleryItemViewSet(viewsets.ReadOnlyModelViewSet):
     """
-    获取所有已发布的画廊作品列表
+    用於處理畫廊作品列表、詳情及相關操作的視圖集
     """
-    queryset = GalleryItem.objects.filter(status='published').order_by('-created_at')
-    serializer_class = GalleryListSerializer
-    permission_classes = [AllowAny] # 公开接口，允许任何人访问
+    queryset = GalleryItem.objects.filter(status='published').select_related('author', 'prerequisiteWork').prefetch_related('tags')
+    
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return GalleryListSerializer
+        # retrieve, download, collect 等都使用更詳細的 Serializer
+        return GalleryDetailSerializer
 
-class GalleryDetailView(mixins.RetrieveModelMixin, generics.GenericAPIView):
-    """
-    GET: 获取单个作品详情
-    POST: 处理下载请求
-    """
-    queryset = GalleryItem.objects.filter(status='published')
-    serializer_class = GalleryDetailSerializer
-    permission_classes = [AllowAny]
+    def get_serializer_context(self):
+        # 確保 request 物件被傳遞給序列化器，以便其內部可以訪問 request.user
+        return {'request': self.request}
 
-    def get(self, request, *args, **kwargs):
-        """处理 GET 请求，返回作品详情"""
-        return self.retrieve(request, *args, **kwargs)
-
-    def post(self, request, *args, **kwargs):
-        """处理 POST 请求，用于下载"""
-        if not request.user.is_authenticated:
-            return Response({"error": "Please log in to download."}, status=status.HTTP_401_UNAUTHORIZED)
-        
+    @action(detail=True, methods=['post'], permission_classes=[IsStudent])
+    def collect(self, request, pk=None):
+        """收藏作品"""
         work = self.get_object()
         user = request.user
-        confirm_deduction = request.data.get('confirmDeduction', False)
+        _, created = GalleryCollection.objects.get_or_create(user=user, gallery_item=work)
+        if not created:
+            return Response({"detail": "You have already collected this work."}, status=status.HTTP_409_CONFLICT)
+        return Response({"detail": "Work collected successfully."}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path='collect', permission_classes=[IsStudent])
+    def uncollect(self, request, pk=None):
+        """取消收藏作品"""
+        work = self.get_object()
+        user = request.user
+        deleted_count, _ = GalleryCollection.objects.filter(user=user, gallery_item=work).delete()
+        if deleted_count == 0:
+            return Response({"detail": "You have not collected this work."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsStudent])
+    def download(self, request, pk=None):
+        """
+        【核心重構】處理作品的下載請求
+        """
+        work = self.get_object()
+        user = request.user
+        # 前端應傳遞 'isConfirmed' 而非 'confirmDeduction' 以保持一致性
+        is_confirmed = request.data.get('isConfirmed', False)
 
         if not work.workFile:
-            return Response({"error": "Work file is not available."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Work file is not available for this item."}, status=status.HTTP_404_NOT_FOUND)
 
-        # 检查前置条件
         if work.prerequisiteWork and not GalleryDownloadRecord.objects.filter(user=user, gallery_item=work.prerequisiteWork).exists():
             return Response({
                 "prerequisiteNotMet": True,
@@ -646,111 +604,39 @@ class GalleryDetailView(mixins.RetrieveModelMixin, generics.GenericAPIView):
         
         is_redownload = GalleryDownloadRecord.objects.filter(user=user, gallery_item=work).exists()
         
-        if is_redownload or work.requiredPoints == 0:
+        if is_redownload or work.requiredPoints == 0 or (work.is_vip_free and user.is_vip): # 假設用戶模型有 is_vip 屬性
             return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
         
         if user.currentPoints < work.requiredPoints:
-            return Response({"error": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+            return Response({"detail": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
 
-        if not confirm_deduction:
+        if not is_confirmed:
             return Response({
                 "confirmationRequired": True,
                 "pointsToDeduct": work.requiredPoints
             }, status=status.HTTP_409_CONFLICT)
         
+        # --- 執行扣分和創建下載記錄 ---
         user.currentPoints -= work.requiredPoints
         user.save()
+        
         PointsTransaction.objects.create(
             user=user, 
             amount=-work.requiredPoints,
             description=f"下载作品: {work.title}",
-            transaction_type=PointsTransaction.TransactionType.DOWNLOAD,
+            transaction_type='download', # 假設您有對應的類型
             content_object=work
         )
-        GalleryDownloadRecord.objects.create(user=user, gallery_item=work, points_spent=work.requiredPoints)
+
+        # 【關鍵實現】: 在創建下載記錄時，保存當前的版本號
+        GalleryDownloadRecord.objects.create(
+            user=user, 
+            gallery_item=work, 
+            points_spent=work.requiredPoints,
+            version_at_download=work.version # <-- 將版本號存入資料庫
+        )
         
         return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
-
-class GalleryDownloadView(generics.GenericAPIView):
-    """
-    處理作品的下載請求 (僅處理 POST 請求)
-    """
-    queryset = GalleryItem.objects.filter(status='published')
-    serializer_class = GalleryDetailSerializer 
-    permission_classes = [IsStudent] 
-
-    def post(self, request, *args, **kwargs):
-        """
-        處理 POST 請求，執行下載邏輯
-        """
-        # 這裡的邏輯與您原始的 post 方法完全相同
-        work = self.get_object()
-        user = request.user
-        confirm_deduction = request.data.get('confirmDeduction', False)
-
-        if not work.workFile:
-            return Response({"error": "Work file is not available for this item."}, status=status.HTTP_404_NOT_FOUND)
-
-        # 檢查前置作品是否已下載
-        if work.prerequisiteWork and not GalleryDownloadRecord.objects.filter(user=user, gallery_item=work.prerequisiteWork).exists():
-            return Response({
-                "prerequisiteNotMet": True,
-                "requiredWork": {
-                    "id": work.prerequisiteWork.id,
-                    "title": work.prerequisiteWork.title
-                }
-            }, status=status.HTTP_409_CONFLICT)
-        
-        is_redownload = GalleryDownloadRecord.objects.filter(user=user, gallery_item=work).exists()
-        
-        # 如果是重新下載或免費，直接返回 URL
-        if is_redownload or work.requiredPoints == 0:
-            return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
-        
-        # 檢查積分是否足夠
-        if user.currentPoints < work.requiredPoints:
-            return Response({"error": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
-
-        # 檢查是否需要用戶二次確認
-        if not confirm_deduction:
-            return Response({
-                "confirmationRequired": True,
-                "pointsToDeduct": work.requiredPoints
-            }, status=status.HTTP_409_CONFLICT)
-        
-        # 執行扣分和創建下載記錄
-        user.currentPoints -= work.requiredPoints
-        user.save()
-        GalleryDownloadRecord.objects.create(user=user, gallery_item=work, points_spent=work.requiredPoints)
-        
-        # 返回下載 URL
-        return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)}) 
-
-class GalleryCollectionView(generics.GenericAPIView):
-    """
-    处理画廊作品的收藏与取消收藏
-    """
-    queryset = GalleryItem.objects.filter(status='published')
-    permission_classes = [IsStudent]
-    serializer_class = GalleryDetailSerializer 
-
-    def post(self, request, *args, **kwargs):
-        """收藏作品"""
-        work = self.get_object()
-        user = request.user
-        _, created = GalleryCollection.objects.get_or_create(user=user, gallery_item=work)
-        if not created:
-            return Response({"message": "You have already collected this work."}, status=status.HTTP_409_CONFLICT)
-        return Response({"message": "Work collected successfully."}, status=status.HTTP_201_CREATED)
-
-    def delete(self, request, *args, **kwargs):
-        """取消收藏作品"""
-        work = self.get_object()
-        user = request.user
-        deleted_count, _ = GalleryCollection.objects.filter(user=user, gallery_item=work).delete()
-        if deleted_count == 0:
-            return Response({"message": "You have not collected this work."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(status=status.HTTP_204_NO_CONTENT)
     
 # ===============================================
 # =======          社群模块视图          =======

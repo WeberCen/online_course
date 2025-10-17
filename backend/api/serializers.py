@@ -185,120 +185,10 @@ class UserSummarySerializer(serializers.ModelSerializer):
 # =======         课程模块 Serializers     =======
 # ===============================================
 
-class OptionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Option
-        fields = ['id', 'text','is_correct']
+# ==============================================================================
+# A. 輔助與基礎序列化器
+# ==============================================================================
 
-class FillInBlankAnswerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = fill_in_blank
-        fields = ['id', 'index_number', 'correct_answer', 'case_sensitive']
-class ExerciseSerializer(serializers.ModelSerializer):
-    answer_details = serializers.SerializerMethodField()
-    class Meta:
-        model = Exercise
-        fields = ['id', 'chapter', 'type','prompt', 
-                  'explanation', 'image_upload', 
-                  'image_url','answer_details']
-        read_only_fields = ['id', 'chapter', 'type', 'prompt', 
-                  'explanation']
-    def get_answer_details(self, obj):
-        if obj.type == 'multiple-choice':
-            options = obj.options.all()
-            return OptionSerializer(options, many=True).data
-        
-        elif obj.type == 'fill-in-the-blank':
-            blanks = obj.fill_in_blanks.all()
-            return FillInBlankAnswerSerializer(blanks, many=True).data
-        return None
-#学生版
-class OptionStudentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Option
-        fields = ['id', 'text']
-class ExerciseStudentSerializer(serializers.ModelSerializer):
-    options = OptionStudentSerializer(many=True, read_only=True) # 使用上面那个安全的 Option 序列器
-
-    class Meta:
-        model = Exercise
-        fields = ['id', 'type', 'prompt', 'image_upload', 'image_url', 'options']
-
-class ChapterSerializer(serializers.ModelSerializer):
-    """章节信息的序列化器（包含练习题）"""
-    exercises = ExerciseStudentSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = Chapter
-        fields = ['id', 'title', 'order', 'videoUrl', 'exercises']
-
-
-class CourseListSerializer(serializers.ModelSerializer):
-    """用于课程列表的序列化器"""
-    author = UserSummarySerializer(read_only=True)
-    chapterCount = serializers.SerializerMethodField()
-    followers_count = serializers.SerializerMethodField()
-    display_tags = serializers.StringRelatedField(many=True, read_only=True) 
-
-    class Meta:
-        model = Course
-        fields = ['id', 'title', 'description', 'coverImage', 
-                  'author', 'display_tags', 'chapterCount', 
-                  'created_at','status','followers_count']
-
-    def get_chapterCount(self, obj):
-        return obj.chapters.count()
-    def get_followers_count(self, obj):
-        collectors_count = obj.collectors.count()
-        subscribers_count = obj.subscribers.count()
-        return collectors_count + subscribers_count
-    def get_display_tags(self, obj):
-        all_tags = obj.tags.all()
-        if all_tags.count() <= 3:
-             return [tag.name for tag in all_tags] 
-        else:
-             sampled_tags = random.sample(list(all_tags), 3)
-        return [tag.name for tag in sampled_tags]
-
-class CourseDetailSerializer(CourseListSerializer):
-    """
-    用于课程详情的序列化器，继承自列表序列化器
-    并额外包含完整的章节列表
-    """
-    chapters = serializers.SerializerMethodField()
-    is_subscribed = serializers.SerializerMethodField()
-    is_collected = serializers.SerializerMethodField()
-
-    class Meta(CourseListSerializer.Meta):
-
-        fields = CourseListSerializer.Meta.fields + [
-            'pricePoints', 'tags','is_vip_free','chapters', 'is_subscribed', 'is_collected']
-        
-    def get_is_subscribed(self, obj):
-        user = self.context['request'].user
-        if user and user.is_authenticated:
-            return Subscription.objects.filter(user=user, course=obj).exists()
-        return False
-
-    def get_is_collected(self, obj):
-        user = self.context['request'].user
-        if user and user.is_authenticated:
-            return Collection.objects.filter(user=user, course=obj).exists()
-        return False
-        
-    def get_chapters(self, obj):
-        is_subscribed = self.get_is_subscribed(obj)
-        user = self.context['request'].user
-
-        # 游客、未订阅用户，只看前三章
-        if not is_subscribed:
-            chapters_queryset = obj.chapters.all()[:3]
-        else: # 已订阅用户或管理员，看全部
-            chapters_queryset = obj.chapters.all()
-        
-        return ChapterSerializer(chapters_queryset, many=True, context=self.context).data
-    
-  
 class SimpleCourseSerializer(serializers.ModelSerializer):
     class Meta:
         model = Course
@@ -309,6 +199,151 @@ class SimpleChapterSerializer(serializers.ModelSerializer):
         model = Chapter
         fields = ['id', 'title', 'order']
 
+# --- 選項序列化器 (分角色) ---
+
+class OptionStudentSerializer(serializers.ModelSerializer):
+    """【學生版】選項序列化器 (安全，不含答案)"""
+    class Meta:
+        model = Option
+        fields = ['id', 'text']
+
+class OptionAdminSerializer(serializers.ModelSerializer):
+    """【後台版】選項序列化器 (完整，包含答案)"""
+    class Meta:
+        model = Option
+        fields = ['id', 'text', 'is_correct']
+
+# ==============================================================================
+# B. 學生視圖核心序列化器 (前端 API 主要使用)
+# ==============================================================================
+
+class UserSubmissionDetailSerializer(serializers.ModelSerializer):
+    """【輔助】用於展示用戶作答詳情的序列化器"""
+    correct_answer = serializers.SerializerMethodField()
+    analysis = serializers.CharField(source='exercise.explanation', read_only=True)
+    user_answer = serializers.JSONField(source='submitted_answer', read_only=True)
+
+    class Meta:
+        model = UserExerciseSubmission
+        fields = ['user_answer', 'is_correct', 'correct_answer', 'analysis']
+    def get_correct_answer(self, obj):
+        """動態獲取關聯練習題的正確答案"""
+        exercise = obj.exercise
+        if exercise.type == 'multiple-choice':
+            return list(exercise.options.filter(is_correct=True).values_list('text', flat=True))
+        elif exercise.type == 'fill-in-the-blank':
+            blank = exercise.fill_in_blanks.first()
+            return blank.correct_answer if blank else None
+        return None
+
+class ExerciseStudentSerializer(serializers.ModelSerializer):
+    """【學生版】練習題序列化器 (安全，且包含用戶提交記錄)"""
+    options = OptionStudentSerializer(many=True, read_only=True)
+    user_submission = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Exercise
+        fields = [
+            'id', 'type', 'prompt', 'image_upload', 
+            'image_url', 'options', 'user_submission'
+        ]
+
+    def get_user_submission(self, obj):
+        request = self.context.get('request', None)
+        if not request or not request.user.is_authenticated:
+            return None
+
+        submission = UserExerciseSubmission.objects.filter(
+            user=request.user, 
+            exercise=obj
+        ).order_by('-submitted_at').first()
+
+        if submission:
+            # 調用輔助序列化器來格式化數據
+            return UserSubmissionDetailSerializer(submission).data
+        return None
+
+class ChapterSerializer(serializers.ModelSerializer):
+    """【學生版】章節序列化器"""
+    # 這裡會自動使用上面已增強的 ExerciseStudentSerializer
+    exercises = ExerciseStudentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Chapter
+        fields = ['id', 'title', 'order', 'videoUrl', 'exercises']
+
+class CourseListSerializer(serializers.ModelSerializer):
+    """課程列表序列化器"""
+    author = UserSummarySerializer(read_only=True)
+    chapterCount = serializers.IntegerField(source='chapters.count', read_only=True)
+    followers_count = serializers.SerializerMethodField()
+    display_tags = serializers.StringRelatedField(many=True, source='tags', read_only=True) 
+
+    class Meta:
+        model = Course
+        fields = ['id', 'title', 'description', 'coverImage', 
+                  'author', 'display_tags', 'chapterCount', 
+                  'created_at', 'status', 'followers_count']
+    
+    def get_followers_count(self, obj):
+        return obj.collectors.count() + obj.subscribers.count()
+
+class CourseDetailSerializer(CourseListSerializer):
+    """課程詳情序列化器"""
+    chapters = serializers.SerializerMethodField()
+    is_subscribed = serializers.SerializerMethodField()
+    is_collected = serializers.SerializerMethodField()
+
+    class Meta(CourseListSerializer.Meta):
+        fields = CourseListSerializer.Meta.fields + [
+            'pricePoints', 'is_vip_free', 'chapters', 
+            'is_subscribed', 'is_collected'
+        ]
+        
+    def get_is_subscribed(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return Subscription.objects.filter(user=request.user, course=obj).exists()
+        return False
+
+    def get_is_collected(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return Collection.objects.filter(user=request.user, course=obj).exists()
+        return False
+        
+    def get_chapters(self, obj):
+        is_subscribed = self.get_is_subscribed(obj)
+        chapters_queryset = obj.chapters.all()
+
+        # 僅對非訂閱用戶限制章節數量
+        if not is_subscribed:
+            chapters_queryset = chapters_queryset[:3]
+        
+        # 關鍵：將 context 傳遞下去，以便 ExerciseStudentSerializer 能獲取 request
+        return ChapterSerializer(chapters_queryset, many=True, context=self.context).data
+
+# ==============================================================================
+# C. 練習提交相關序列化器 (用於接收前端數據)
+# ==============================================================================
+
+class AnswerSerializer(serializers.Serializer):
+    """單個答案的序列化器"""
+    exerciseId = serializers.IntegerField()
+    userAnswer = serializers.JSONField()
+      
+class ExerciseSubmissionSerializer(serializers.Serializer):
+    """整個章節練習提交的序列化器"""
+    answers = AnswerSerializer(many=True)
+
+class UserExerciseSubmissionCreateSerializer(serializers.ModelSerializer):
+    """【輔助】用於在視圖中創建/更新資料庫記錄"""
+    class Meta:
+        model = UserExerciseSubmission
+        fields = ['user', 'exercise', 'submitted_answer', 'is_correct']
+# ==============================================================================
+# D. 其他特定用途序列化器
+# ==============================================================================
 class CourseProgressSerializer(serializers.Serializer):
     """课程进度序列化器"""   
     # 关联对象信息
@@ -337,24 +372,31 @@ class CourseProgressSerializer(serializers.Serializer):
         if total > 0:
             return round((completed / total) * 100,2)
         return 0
+    
+# ==============================================================================
+# E. 後台管理/作者序列化器 (Admin-Only)
+# ==============================================================================
 
-
-class AnswerSerializer(serializers.Serializer):
-    """单个答案的序列化器"""
-    exerciseId = serializers.IntegerField()
-    userAnswer = serializers.JSONField()
-     
-class ExerciseSubmissionSerializer(serializers.Serializer):
-    """整个章节练习提交的序列化器"""
-    answers = AnswerSerializer(many=True)
-
-class UserExerciseSubmissionSerializer(serializers.ModelSerializer):
-    """用于创建用户练习题提交记录的序列化器"""
+class FillInBlankAnswerAdminSerializer(serializers.ModelSerializer):
     class Meta:
-        model = UserExerciseSubmission
-        # 定义需要写入的字段
-        fields = ['user', 'exercise', 'submitted_answer', 'is_correct']
+        model = fill_in_blank
+        fields = ['id', 'index_number', 'correct_answer', 'case_sensitive']
 
+class ExerciseAdminSerializer(serializers.ModelSerializer):
+    """【後台版】練習題完整序列化器"""
+    answer_details = serializers.SerializerMethodField()
+    class Meta:
+        model = Exercise
+        fields = ['id', 'chapter', 'type', 'prompt', 
+                  'explanation', 'image_upload', 
+                  'image_url', 'answer_details']
+    
+    def get_answer_details(self, obj):
+        if obj.type == 'multiple-choice':
+            return OptionAdminSerializer(obj.options.all(), many=True).data
+        elif obj.type == 'fill-in-the-blank':
+            return FillInBlankAnswerAdminSerializer(obj.fill_in_blanks.all(), many=True).data
+        return None
 
 # ===============================================
 # =======         画廊模块 Serializers     =======

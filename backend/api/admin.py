@@ -103,12 +103,16 @@ class SubscriptionInline(admin.TabularInline):
 class GalleryDownloadRecordInline(admin.TabularInline):
     model = GalleryDownloadRecord
     extra = 0
-    verbose_name_plural = '下载的作品'
-    fields = ('gallery_item','item_version','points_spent', 'downloaded_at')
-    readonly_fields = ('item_version','downloaded_at',)
-    autocomplete_fields = ['gallery_item']
-    def item_version(self, obj):
-        return obj.gallery_item.version
+    verbose_name_plural = '下载记录'
+    #fk_name = 'gallery_item'
+    fields = ('user', 'points_spent', 'version_at_download','downloaded_at')
+    readonly_fields = ('points_spent','version_at_download', 'downloaded_at',)
+    autocomplete_fields = ['user']
+    def has_add_permission(self, request, obj=None):
+        return False
+    def has_delete_permission(self, request, obj=None):
+        return False
+    
     
 class GalleryCollectionInline(admin.TabularInline):
     model = GalleryCollection
@@ -436,7 +440,7 @@ class GalleryItemAdmin(RichTextAdminMixin, VersionAdmin):
     ) 
 
     readonly_fields = (
-        'title', 'author', 'description', 'coverImage', 'workFile',
+        'title', 'author', 'workFile',
         'requiredPoints', 'prerequisiteWork', 'version', 
         'rating', 'estimated_download_time_formatted', 'created_at', 'updated_at'
     )

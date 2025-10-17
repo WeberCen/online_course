@@ -24,8 +24,8 @@ import type {
   Exercise,
   ExerciseAnswer,
   Progress,
-  SubmissionResult,
-  
+  SubmissionReport,
+
   // 画廊模块类型
   GalleryItem,
   GalleryItemDetail,
@@ -207,8 +207,8 @@ export const getCourseProgress = async (courseId: string): Promise<Progress> => 
   return response.data;
 };
 
-export const submitChapterExercises = async (courseId: string, chapterId: string, answers: ExerciseAnswer[]): Promise<SubmissionResult> => {
-  const response = await apiClient.post<SubmissionResult>(`/courses/${courseId}/chapters/${chapterId}/submit/`, { answers });
+export const submitChapterExercises = async (chapterId: string, answers: ExerciseAnswer[]): Promise<SubmissionReport> => {
+  const response = await apiClient.post<SubmissionReport>(`/chapters/${chapterId}/submit/`, { answers });
   return response.data;
 };
 

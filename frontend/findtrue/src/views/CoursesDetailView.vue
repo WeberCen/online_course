@@ -41,32 +41,77 @@
           
           <div v-if="course.is_subscribed && chapter.exercises && chapter.exercises.length > 0" class="exercise-section">
             <h4>章節練習</h4>
+            
             <div v-for="exercise in chapter.exercises" :key="exercise.id" class="exercise">
-            <p v-html="exercise.prompt"></p>
-            <div v-if="exercise.type === 'multiple-choice'">     
-              <div v-for="option in exercise.options" :key="option.id">
-                <input 
-                  type="checkbox" 
-                  :id="`ex${exercise.id}-opt-${option.id}`" 
-                  :value="option.text"  
-                  v-model="userAnswers[exercise.id]"
-                >
-             <label :for="`ex${exercise.id}-opt-${option.id}`">{{ option.text }}</label>
-           </div>
+              
+              <div v-if="userSubmissions[exercise.id]" class="review-mode">
+                <p v-html="exercise.prompt" class="prompt-done"></p>
+                <div class="review-area">
+                  <p>
+                    <strong>你的答案:</strong> {{ userSubmissions[exercise.id]?.user_answer }}
+                    <span v-if="userSubmissions[exercise.id]?.is_correct" class="correct-badge">✓ 正確</span>
+                    <span v-else class="incorrect-badge">✗ 錯誤</span>
+                  </p>
+                  
+                  <div v-if="showAnalysis[exercise.id]" class="analysis">
+                    <p><strong>正確答案:</strong> {{ userSubmissions[exercise.id]?.correct_answer }}</p>
+                    <p><strong>解析:</strong> {{ userSubmissions[exercise.id]?.analysis }}</p>
+                  </div>
 
+                  <div class="review-actions">
+                     <button @click="toggleAnalysis(exercise.id)" class="secondary-btn">
+                      {{ showAnalysis[exercise.id] ? '隱藏解析' : '答案解析' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="answering-mode">
+                <p v-html="exercise.prompt"></p>
+                <div v-if="exercise.type === 'multiple-choice'">
+                  <div v-for="option in exercise.options" :key="option.id">
+                    <input type="checkbox" :id="`ex${exercise.id}-opt-${option.id}`" :value="option.text" v-model="userAnswers[exercise.id]">
+                    <label :for="`ex${exercise.id}-opt-${option.id}`">{{ option.text }}</label>
+                  </div>
+                </div>
+                <div v-if="exercise.type === 'fill-in-the-blank'">
+                  <input type="text" placeholder="請輸入答案" v-model="userAnswers[exercise.id]">
+                </div>
+              </div>
+            </div>
+
+            <div class="chapter-actions">
+                <button @click="handleCompleteChapter(chapter.id)">提交本章答案</button>
+                <button @click="redoChapter(chapter)" class="secondary-btn">重做本章</button>
+            </div>
           </div>
-          <div v-if="exercise.type === 'fill-in-the-blank'">
-            <input type="text" placeholder="請輸入答案" v-model="userAnswers[exercise.id]">
-          </div>
-        </div>
-        <button @click="handleCompleteChapter(chapter.id)" class="complete-btn">提交本章答案</button>
-      </div>
-        </li>
+          </li>
       </ul>
+
       <div v-if="!course.is_subscribed && course.chapters.length < course.chapterCount" class="preview-limit">
         <p>... 更多章節內容，訂閱後即可查看 ...</p>
       </div>
     </div>
+
+    <div v-if="submissionReportForPopup" class="modal-overlay" @click="closeResultsPopup">
+      <div class="modal-content" @click.stop>
+        <h3>批改結果</h3>
+        <p class="summary">
+          答對 <strong>{{ submissionReportForPopup.summary.correct_count }}</strong> 題，
+          答錯 <strong>{{ submissionReportForPopup.summary.incorrect_count }}</strong> 題。
+        </p>
+        <div v-if="submissionReportForPopup.summary.incorrect_count > 0" class="incorrect-list">
+          <h4>回答錯誤的題目：</h4>
+          <ul>
+            <li v-for="ex in submissionReportForPopup.summary.incorrect_exercises" :key="ex.id">
+              <p v-html="ex.prompt"></p>
+            </li>
+          </ul>
+        </div>
+        <button @click="closeResultsPopup">我知道了</button>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -83,28 +128,20 @@ import {
   uncollectCourse,
   submitChapterExercises
 } from '@/services/apiService';
-import type { CourseDetail, Chapter, ExerciseAnswer, Progress} from '@/types';
+import type { CourseDetail, Chapter, 
+  ExerciseAnswer, Progress,UserSubmission,
+  SubmissionReport} from '@/types';
 
-/* --- 類型增強  ---
-
-interface EnhancedExercise extends Exercise {
-  options: ExerciseOption[];
-}
-interface EnhancedChapter extends Chapter {
-  exercises: EnhancedExercise[];
-}
-interface EnhancedCourseDetail extends CourseDetail {
-  chapters: EnhancedChapter[];
-}
-*/
 // --- 響應式狀態 (保持不變) ---
 const route = useRoute();
 const course = ref<CourseDetail | null>(null);
-//const course = ref<EnhancedCourseDetail | null>(null);
 const progress = ref<Progress | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const userAnswers = reactive<Record<number, string | string[]>>({});
+const userSubmissions = ref<Record<number, UserSubmission>>({});
+const submissionReportForPopup = ref<SubmissionReport | null>(null);
+const showAnalysis = ref<Record<number, boolean>>({});
 const courseId = route.params.id as string;
 
 // --- 輔助函式 (保持不變) ---
@@ -112,13 +149,20 @@ const initializeAnswers = (chapters: Chapter[]) => {
   for (const chapter of chapters) {
     if (chapter.exercises) {
       for (const exercise of chapter.exercises) {
-        userAnswers[exercise.id] = exercise.type === 'multiple-choice' ? [] : '';
+        // 如果後端返回了歷史提交記錄 (進入複習模式)
+        if (exercise.user_submission) {
+          userSubmissions.value[exercise.id] = exercise.user_submission;
+          // 將用戶上次的答案填入表單模型，方便複習模式下展示
+          userAnswers[exercise.id] = exercise.user_submission.user_answer;
+        } else {
+          // 否則，正常初始化為空 (進入答題模式)
+          userAnswers[exercise.id] = exercise.type === 'multiple-choice' ? [] : '';
+        }
       }
     }
   }
 };
 
-// --- 核心資料獲取邏輯 ---
 const fetchPageData = async () => {
   if (!courseId) {
     error.value = '課程ID缺失。';
@@ -128,32 +172,27 @@ const fetchPageData = async () => {
 
   loading.value = true;
   error.value = null;
+  userSubmissions.value = {}; // 每次刷新前清空舊的提交記錄
 
   try {
-    // 1. 獲取課程詳情
-    // 新模式: 直接接收數據，如果失敗會在此處拋出錯誤並進入 catch 塊
     const courseData = await getCourseDetail(courseId);
     course.value = courseData;
     
+    // 使用升級後的初始化函數
     initializeAnswers(course.value.chapters);
 
-    // 2. 檢查用戶是否已登入且已訂閱，以決定是否要獲取進度
     const isLoggedIn = !!localStorage.getItem('accessToken');
     if (isLoggedIn && course.value.is_subscribed) {
       try {
-        // 同樣，直接獲取進度數據
         progress.value = await getCourseProgress(courseId);
       } catch (progressError) {
-        // 如果只是獲取進度失敗，我們不讓整個頁面崩潰，只在控制台警告
         console.warn("無法獲取課程進度:", progressError);
-        progress.value = null; // 或者設置一個預設值
+        progress.value = null;
       }
     }
   } catch (err) {
-    // 這個 catch 會捕獲 getCourseDetail 的失敗
     console.error('載入課程核心數據時發生錯誤:', err);
     if (isAxiosError(err)) {
-      // 安全地處理錯誤訊息
       const errorData = err.response?.data as Record<string, unknown>;
       const detail = typeof errorData?.detail === 'string' ? errorData.detail : err.message;
       error.value = `無法載入課程：${detail}`;
@@ -168,45 +207,47 @@ const fetchPageData = async () => {
 // --- 生命週期鉤子 (保持不變) ---
 onMounted(fetchPageData);
 
-// --- 事件處理函式 ---
+
+
+// --- 3. 提交邏輯升級 ---
 const handleCompleteChapter = async (chapterId: number) => {
   if (!course.value) return;
   const chapter = course.value.chapters.find(c => c.id === chapterId);
   if (!chapter || !chapter.exercises) return;
 
+  // 篩選出用戶實際作答的題目
   const answersToSubmit: ExerciseAnswer[] = chapter.exercises.reduce((acc, exercise) => {
-    const userAnswer = userAnswers[exercise.id];
-    // 檢查答案是否有效 (非 undefined, null, 或空字串)
-    if (userAnswer !== undefined && userAnswer !== null && String(userAnswer).length > 0) {
-      acc.push({
-        exerciseId: exercise.id,
-        userAnswer: userAnswer, 
-      });
+    // 只處理未做過的題目
+    if (!userSubmissions.value[exercise.id]) {
+      const userAnswer = userAnswers[exercise.id];
+      if (userAnswer !== undefined && userAnswer !== null && String(userAnswer).length > 0) {
+        acc.push({
+          exerciseId: exercise.id,
+          userAnswer: userAnswer, // 在此上下文中，類型是正確的
+        });
+      }
     }
     return acc;
   }, [] as ExerciseAnswer[]);
 
   if (answersToSubmit.length === 0) {
-    alert("請至少回答一道題目後再提交。");
+    alert("您尚未作答任何新題目。");
     return;
   }
 
   try {
-    await submitChapterExercises(courseId, String(chapterId), answersToSubmit);
-    alert('答案已提交！正在刷新學習進度...');
+    const report = await submitChapterExercises(String(chapterId), answersToSubmit);
+    // 將返回的報告存起來，用於觸發彈窗
+    submissionReportForPopup.value = report;
+    // 提交成功後，立即刷新整個頁面的數據，以獲取最新的 user_submission 狀態
     await fetchPageData();
   } catch (err) {
     console.error("提交練習失敗:", err);
     if (isAxiosError(err)) {
       const errorData = err.response?.data;
-      let errorDetail = "未知伺服器錯誤";
-      if (typeof errorData === 'object' && errorData !== null) {
-        const data = errorData as Record<string, unknown>;
-        if (typeof data.detail === 'string') {
-          errorDetail = data.detail;
-        } else {
-          errorDetail = JSON.stringify(data);
-        }
+      let errorDetail = '未知伺服器錯誤';
+      if (typeof errorData === 'object' && errorData !== null && 'detail' in errorData && typeof errorData.detail === 'string') {
+        errorDetail = errorData.detail;
       }
       alert(`提交失敗: ${errorDetail}`);
     } else {
@@ -214,6 +255,28 @@ const handleCompleteChapter = async (chapterId: number) => {
     }
   }
 };
+
+// --- 4. 新增輔助函數 ---
+const redoChapter = (chapter: Chapter) => {
+  if (!chapter.exercises) return;
+  if (!window.confirm("確定要重做本章所有練習嗎？這將會清除您本章的作答記錄。")) return;
+
+  for (const exercise of chapter.exercises) {
+    delete userSubmissions.value[exercise.id];
+    // 重置答案模型
+    userAnswers[exercise.id] = exercise.type === 'multiple-choice' ? [] : '';
+  }
+  // 可選：調用後端 API 來刪除數據庫記錄
+};
+
+const toggleAnalysis = (exerciseId: number) => {
+  showAnalysis.value[exerciseId] = !showAnalysis.value[exerciseId];
+};
+
+const closeResultsPopup = () => {
+  submissionReportForPopup.value = null;
+};
+
 
 const handleSubscribe = async () => {
   if (!course.value) return;

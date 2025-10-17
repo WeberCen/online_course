@@ -1,13 +1,14 @@
 # backend/api/urls.py
-from django.urls import path
+from django.urls import path,include
+from rest_framework.routers import DefaultRouter
+from .views import CourseViewSet,ChapterViewSet
 from .views import (UserRegisterView,UserSearchView,UserLoginView,UserProfileView,
 ChangePhoneInitiateView, ChangePhoneVerifyNewView, ChangePhoneCommitView,
 ChangeEmailInitiateView, ChangeEmailVerifyNewView, ChangeEmailCommitView,
 CertificationSubmitView,EditorImageView,PasswordResetConfirmView,PasswordResetRequestView,
-CourseListView, CourseDetailView,CourseCreateView,
-CourseCollectionView,CourseSubscriptionView,CourseProgressView,ExerciseSubmissionView,
-GalleryListView,GalleryDetailView,GalleryCollectionView,
-GalleryItemCreateView,GalleryDownloadView,
+CourseCreateView,
+GalleryItemViewSet,
+GalleryItemCreateView,
 CommunityCreateView,CommunityListView,CommunityPostDetailView,
 CommunityPostListView,CommunityPostCreateView,CommunityReplyCreateView,
 CommunityPostDestroyView,CommunityPostLikeView,CommunityDetailView,
@@ -19,6 +20,11 @@ def community_post_view(request, *args, **kwargs):
     if request.method == 'POST':
         return CommunityPostCreateView.as_view()(request, *args, **kwargs)
     return CommunityPostListView.as_view()(request, *args, **kwargs)
+
+router = DefaultRouter()
+router.register(r'courses', CourseViewSet, basename='course')
+router.register(r'chapters', ChapterViewSet, basename='chapter')
+router.register(r'gallery/items', GalleryItemViewSet, basename='gallery-item')
 
 urlpatterns = [
     path('auth/register/', UserRegisterView.as_view(), name='auth_register'),
@@ -34,16 +40,7 @@ urlpatterns = [
     path('auth/change-mail/commit/', ChangeEmailCommitView.as_view(), name='change_email_commit'),
     path('certification/submit/', CertificationSubmitView.as_view(), name='certification_submit'),
     path('uploads/editor-image/', EditorImageView.as_view(), name='editor-image-upload'),
-    path('courses/', CourseListView.as_view(), name='course_list'),
-    path('courses/<int:pk>/', CourseDetailView.as_view(), name='course_detail'),
-    path('courses/<int:pk>/subscribe/', CourseSubscriptionView.as_view(), name='course-subscribe'),
-    path('courses/<int:pk>/collect/', CourseCollectionView.as_view(), name='course-collect'),
-    path('courses/<int:pk>/progress/', CourseProgressView.as_view(), name='course-progress'),
-    path('courses/<int:course_pk>/chapters/<int:chapter_pk>/submit/', ExerciseSubmissionView.as_view(), name='exercise-submit'),
-    path('gallery/works/', GalleryListView.as_view(), name='gallery-list'),
-    path('gallery/works/<int:pk>/', GalleryDetailView.as_view(), name='gallery-detail'),
-    path('gallery/works/<int:pk>/download/', GalleryDownloadView.as_view(), name='gallery-download'),
-    path('gallery/works/<int:pk>/collect/', GalleryCollectionView.as_view(), name='gallery-collect'),
+    path('', include(router.urls)),    
     path('communities/', CommunityListView.as_view(), name='community-list'),
     path('communities/<int:pk>/', CommunityDetailView.as_view(), name='community-detail'),
     path('communities/<int:community_pk>/posts/', community_post_view, name='community-post-list-create'),

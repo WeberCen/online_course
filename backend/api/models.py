@@ -409,13 +409,14 @@ class GalleryDownloadRecord(models.Model):
     gallery_item = models.ForeignKey(GalleryItem, on_delete=models.CASCADE,verbose_name="下载作品")
     downloaded_at = models.DateTimeField(auto_now_add=True, verbose_name="下载时间")
     points_spent = models.PositiveIntegerField(verbose_name="消耗积分")
-
+    version_at_download = models.CharField(max_length=20, verbose_name="下载时版本", blank=True)
     class Meta:
         verbose_name = "画廊作品下载记录"
         verbose_name_plural = verbose_name
     
     def __str__(self):
-        return f"{self.user.username} downloaded {self.item.title} at {self.downloaded_at.strftime('%Y-%m-%d %H:%M')}"
+        item_title = self.gallery_item.title if self.gallery_item else "[已删除的作品]"
+        return f"{self.user.username} downloaded {item_title} at {self.downloaded_at.strftime('%Y-%m-%d %H:%M')}"
 
 class GalleryItemRating(models.Model):
     """画廊作品评分记录模型"""

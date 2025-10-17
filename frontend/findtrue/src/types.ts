@@ -89,6 +89,47 @@ export interface ExerciseOption {
   text: string;
 }
 
+export interface UserSubmission {
+  user_answer: string | string[]; // 用戶當時提交的答案
+  is_correct: boolean;           // 批改結果：是否正確
+  correct_answer: string | string[]; // 官方正確答案
+  analysis: string;              // 答案解析
+}
+
+export interface Exercise {
+  id: number;
+  prompt: string;
+  type: 'multiple-choice' | 'fill-in-the-blank';
+  options: ExerciseOption[];
+  explanation: string | null; 
+  image_upload: string | null; 
+  image_url: string | null; 
+  user_submission: UserSubmission | null;
+}
+
+export interface SubmissionSummary {
+  correct_count: number;
+  incorrect_count: number;
+  incorrect_exercises: { id: number; prompt: string }[];
+}
+
+export interface SubmissionDetail {
+  is_correct: boolean;
+  correct_answer: string | string[];
+  analysis: string;
+}
+
+export interface SubmissionReport {
+  summary: SubmissionSummary;
+  details: Record<string, SubmissionDetail>; 
+}
+
+
+export interface ExerciseAnswer {
+  exerciseId: number;
+  userAnswer: string | string[];
+}
+
 export interface Chapter {
   id: number;
   title: string;
@@ -116,34 +157,14 @@ export interface CourseDetail extends Course {
   is_collected: boolean;
 }
 
-export interface ExerciseAnswer {
-   exerciseId:number;
-   userAnswer:string | string[];
-}
-
-export interface Exercise {
-  id: number;
-  prompt: string;
-  type: 'multiple-choice' | 'fill-in-the-blank';
-  options: ExerciseOption[];
-  explanation: string | null; 
-  image_upload: string | null; 
-  image_url: string | null; 
-}
-
-
 export interface Progress {
   completed_exercises: number;
   total_exercises: number;
   progress_percentage: number;
-  next_chapter_id: number | null; // 可选，因为课程可能已全部完成
+  next_chapter_id: number | null; 
 }
 
-export interface SubmissionResult {
-  score: number;
-  isPassed: boolean;
-  newProgress: Progress;
-}
+
 // ===============================================
 // =======          画廊模块类型          =======
 // ===============================================
