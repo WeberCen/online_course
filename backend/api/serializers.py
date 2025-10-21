@@ -4,11 +4,53 @@ from rest_framework import serializers
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User,CertificationRequest,Course,Chapter,Exercise
-from .models import (Subscription, Collection, Option, fill_in_blank,
+from .models import (Subscription, Collection, Option, fill_in_blank,Tag,
                      GalleryItem, GalleryCollection, GalleryDownloadRecord, 
                      GalleryItemRating,Community,CommunityPost,CommunityReply,
                      Message,MessageThread,UserExerciseSubmission)
- 
+
+class TagsField(serializers.Field):
+    """
+    自定义字段，用于处理标签的“查找或创建”。
+    接受一个字符串列表，返回一个 Tag 实例列表。
+    """
+    def __init__(self, *args, **kwargs):
+        # 从 Serializer context 中获取 'scope'
+        self.scope = kwargs.pop('scope', None)
+        if not self.scope:
+            raise ValueError("TagsField 必须提供 'scope' 参数。")
+        super().__init__(*args, **kwargs)
+
+    def to_representation(self, value):
+        """Model -> JSON (返回标签名称列表)"""
+        return [tag.name for tag in value.all()]
+
+    def to_internal_value(self, data):
+        """JSON -> Model (核心逻辑)"""
+        if not isinstance(data, list):
+            raise serializers.ValidationError("需要一个标签名称列表。")
+        
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            raise serializers.ValidationError("Serializer 需要 request context。")
+        
+        tags_list = []
+        for tag_name in data:
+            tag_name = str(tag_name).strip()
+            if not tag_name:
+                continue
+            
+            # 查找或创建
+            tag, created = Tag.objects.get_or_create(
+                name=tag_name, 
+                scope=self.scope,
+                defaults={'creator': request.user} # 如果新建，则设置 creator
+            )
+            tags_list.append(tag)
+        
+        return tags_list
+
+
 # ===============================================
 # =======       基础配置  Serializers     =======
 # ===============================================
@@ -609,17 +651,161 @@ class MyParticipationsSerializer(serializers.Serializer):
     posts = CommunityPostListSerializer(many=True, read_only=True)
 class CourseCreateSerializer(serializers.ModelSerializer):
     """【创建课程用】的序列化器"""
+    tags = TagsField(scope=Tag.TagScope.COURSE, required=False)
     class Meta:
         model = Course
-        fields = ['title', 'description', 'coverImage', 'tags', 'pricePoints', 'is_vip_free']
+        fields = ['id', 'title', 'description', 'coverImage', 'tags', 'pricePoints', 'is_vip_free','status']
+        read_only_fields = ['id','status']
+
 class GalleryItemCreateSerializer(serializers.ModelSerializer):
     """【创建作品用】的序列化器"""
+    tags = TagsField(scope=Tag.TagScope.GALLERY, required=False)
     class Meta:
         model = GalleryItem
-        fields = ['title', 'description', 'coverImage', 'workFile', 'tags', 'requiredPoints', 'prerequisiteWork', 'version', 'is_vip_free']
+        fields = ['id','title', 'description', 'coverImage', 'workFile', 'tags', 'requiredPoints', 'prerequisiteWork', 'version', 'is_vip_free','status']
+        read_only_fields = ['id','status']
+
 class CommunityCreateSerializer(serializers.ModelSerializer):
-    """【创建社群用】的序列化器 (最终版)"""
+    """【创建社群用】的序列化器 """
+    tags = TagsField(scope=Tag.TagScope.COMMUNITY, required=False)  
     class Meta:
         model = Community
-        # 创作者需要提交的字段
-        fields = ['name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item']
+        fields = ['id','name', 'description', 'tags', 'coverImage', 'related_course', 'related_gallery_item','status']
+        read_only_fields = ['id','status']
+
+class ChapterSerializer(serializers.ModelSerializer):
+    """
+    用于创作者创建和编辑章节
+    """
+    class Meta:
+        model = Chapter
+        fields = ['id', 'title', 'videoUrl', 'order']
+        read_only_fields = ['id', 'order']
+
+class OptionSerializer(serializers.ModelSerializer):
+    """用于 Exercise 的 'options' 字段的嵌套序列化器"""
+    id = serializers.IntegerField(required=False) # 允许更新时传入ID
+    class Meta:
+        model = Option
+        fields = ['id', 'text', 'is_correct']
+
+class FillInBlankSerializer(serializers.ModelSerializer):
+    """用于 Exercise 的 'fill_in_blanks' 字段的嵌套序列化器"""
+    id = serializers.IntegerField(required=False) # 允许更新时传入ID
+    class Meta:
+        model = fill_in_blank
+        fields = ['id', 'index_number', 'correct_answer', 'case_sensitive']
+
+class ExerciseSerializer(serializers.ModelSerializer):
+    """
+    练习题的核心序列化器 (支持嵌套创建和更新)
+    """
+    options = OptionSerializer(many=True, required=False)
+    fill_in_blanks = FillInBlankSerializer(many=True, required=False)
+
+    class Meta:
+        model = Exercise
+        fields = [
+            'id', 'chapter', 'type', 'prompt', 'explanation', 
+            'image_upload', 'image_url', 
+            'options', 'fill_in_blanks'
+        ]
+        # chapter 字段将由 View 在 perform_create 中自动设置
+        read_only_fields = ['id', 'chapter']
+        extra_kwargs = {
+            'image_upload': {'required': False, 'allow_null': True},
+            'image_url': {'required': False, 'allow_null': True},
+            'explanation': {'required': False, 'allow_null': True},
+        }
+
+    def validate(self, data):
+        """动态验证：确保题目类型和选项匹配"""
+        q_type = data.get('type')
+        options = data.get('options')
+        blanks = data.get('fill_in_blanks')
+
+        if q_type == Exercise.ExerciseTypeChoices.MULTIPLE_CHOICE:
+            if not options:
+                raise serializers.ValidationError("多选题必须至少有一个选项。")
+            if blanks:
+                raise serializers.ValidationError("多选题不应包含填空题答案。")
+        
+        elif q_type == Exercise.ExerciseTypeChoices.FILL_IN_THE_BLANK:
+            if not blanks:
+                raise serializers.ValidationError("填空题必须至少有一个答案。")
+            if options:
+                raise serializers.ValidationError("填空题不应包含多选题选项。")
+        
+        return data
+
+    def _create_nested(self, exercise, options_data, blanks_data):
+        """内部方法：创建嵌套的选项/填空"""
+        if exercise.type == Exercise.ExerciseTypeChoices.MULTIPLE_CHOICE:
+            for option_data in options_data:
+                Option.objects.create(exercise=exercise, **option_data)
+        elif exercise.type == Exercise.ExerciseTypeChoices.FILL_IN_THE_BLANK:
+            for blank_data in blanks_data:
+                fill_in_blank.objects.create(exercise=exercise, **blank_data)
+
+    def create(self, validated_data):
+        """处理嵌套创建"""
+        options_data = validated_data.pop('options', [])
+        blanks_data = validated_data.pop('fill_in_blanks', [])
+        
+        exercise = Exercise.objects.create(**validated_data)
+        self._create_nested(exercise, options_data, blanks_data)
+        return exercise
+
+    def update(self, instance, validated_data):
+        """处理嵌套更新 (先删后增，简化逻辑)"""
+        options_data = validated_data.pop('options', [])
+        blanks_data = validated_data.pop('fill_in_blanks', [])
+        
+        # 更新 Exercise 实例
+        instance = super().update(instance, validated_data)
+
+        if instance.type == Exercise.ExerciseTypeChoices.MULTIPLE_CHOICE:
+            instance.options.all().delete()
+            self._create_nested(instance, options_data, [])
+        elif instance.type == Exercise.ExerciseTypeChoices.FILL_IN_THE_BLANK:
+            instance.fill_in_blanks.all().delete()
+            self._create_nested(instance, [], blanks_data)
+            
+        instance.save()
+        return instance      
+    
+class ExerciseNestedSerializer(serializers.ModelSerializer):
+    """(只读) 嵌套在章节中，用于列表显示的轻量级练习序列化器"""
+    class Meta:
+        model = Exercise
+        fields = ['id', 'type', 'prompt']
+
+class ChapterNestedSerializer(serializers.ModelSerializer):
+    """(只读) 嵌套在课程中，包含练习列表的章节序列化器"""
+    exercises = ExerciseNestedSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = Chapter
+        fields = ['id', 'title', 'videoUrl', 'order', 'exercises']
+class CourseDetailSerializer(serializers.ModelSerializer):
+    """
+    (只读) 创作者获取课程详情 (GET) 时的序列化器
+    """
+    # 修复 Tags: 返回字段 "tags": ["标签名1", "标签名2"]
+    tags = serializers.SlugRelatedField(
+        many=True, 
+        read_only=True, 
+        slug_field='name'
+    )
+
+    chapters = ChapterNestedSerializer(many=True, read_only=True)
+    author = UserSummarySerializer(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Course
+        fields = [
+            'id', 'title', 'description', 'coverImage', 'pricePoints', 
+            'is_vip_free', 'author', 'tags', 'status', 'status_display', 
+            'chapters'
+        ]

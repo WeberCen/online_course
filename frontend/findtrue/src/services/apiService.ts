@@ -340,56 +340,169 @@ export const updateMyProfile = async (payload: UserProfileUpdatePayload): Promis
   return response.data;
 };
 
-export const createCourse = async (courseData: FormData): Promise<OperationResponse> => {
-  const response = await apiClient.post('/creator/courses/', courseData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+
+// -----------------------------------------------------------------
+// 课程 (Course)
+// -----------------------------------------------------------------
+/** GET /creator/courses/ - 获取创作者的所有课程 (仪表盘) */
+export const getMyCourses = async (): Promise<Course[]> => {
+  const response = await apiClient.get<Course[]>('/creator/courses/');
+  return response.data;
+};
+
+/** POST /creator/courses/new/ - 创建新课程 (你已提供) */
+export const createMyCourse = async (courseData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/courses/new/', courseData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
 };
 
-export const createGalleryItem = async (itemData: FormData): Promise<OperationResponse> => {
-  const response = await apiClient.post('/creator/gallery/', itemData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
+/** GET /creator/courses/{pk}/ - 获取单个课程详情 (用于编辑页) */
+export const getMyCourseDetail = async (courseId: string): Promise<Course> => {
+  const response = await apiClient.get<Course>(`/creator/courses/${courseId}/`);
   return response.data;
 };
 
-export const createCommunity = async (communityData: FormData): Promise<OperationResponse> => {
-  const response = await apiClient.post('/creator/communities/', communityData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  return response.data;
-};
-
-export const updateCourse = async (courseId: string, courseData: FormData): Promise<OperationResponse> => {
+/** PUT /creator/courses/{pk}/ - 更新课程 */
+export const updateMyCourse = async (courseId: string, courseData: FormData): Promise<OperationResponse> => {
   const response = await apiClient.put(`/creator/courses/${courseId}/`, courseData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
 };
 
-export const updateGalleryItem = async (itemId: string, itemData: FormData): Promise<OperationResponse> => {
-  const response = await apiClient.put(`/creator/gallery/${itemId}/`, itemData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+/** POST /creator/courses/{pk}/submit/ - 提交课程审核 (关键状态流) */
+export const submitMyCourseForReview = async (courseId: string): Promise<{ status: string; message: string }> => {
+  const response = await apiClient.post(`/creator/courses/${courseId}/submit/`);
+  return response.data;
+};
+
+// -----------------------------------------------------------------
+// 章节 (Chapter)
+// -----------------------------------------------------------------
+
+/** POST /creator/courses/{course_pk}/chapters/ - 为课程创建新章节 */
+export const createMyChapter = async (courseId: string, data: { title: string; videoUrl?: string }): Promise<Chapter> => {
+  const response = await apiClient.post<Chapter>(`/creator/courses/${courseId}/chapters/`, data);
+  return response.data;
+};
+
+/** PUT /creator/chapters/{pk}/ - 更新章节 */
+export const updateMyChapter = async (chapterId: string, data: { title: string; videoUrl?: string }): Promise<Chapter> => {
+  const response = await apiClient.put<Chapter>(`/creator/chapters/${chapterId}/`, data);
+  return response.data;
+};
+
+/** DELETE /creator/chapters/{pk}/ - 删除章节 */
+export const deleteMyChapter = async (chapterId: string): Promise<void> => {
+  await apiClient.delete(`/creator/chapters/${chapterId}/`);
+};
+
+/** PUT /creator/courses/{course_pk}/chapters/order/ - 批量更新章节排序 */
+export const updateMyChapterOrder = async (courseId: string, chapterIds: string[]): Promise<{ status: string }> => {
+  const response = await apiClient.put(`/creator/courses/${courseId}/chapters/order/`, { chapter_ids: chapterIds });
+  return response.data;
+};
+
+// -----------------------------------------------------------------
+// 练习题 (Exercise)
+// -----------------------------------------------------------------
+
+/** POST /creator/chapters/{chapter_pk}/exercises/ - 为章节创建新练习 */
+export const createMyExercise = async (chapterId: string, exerciseData: FormData): Promise<Exercise> => {
+  const response = await apiClient.post<Exercise>(`/creator/chapters/${chapterId}/exercises/`, exerciseData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
 };
 
-export const updateCommunity = async (communityId: string, communityData: FormData): Promise<OperationResponse> => {
-  const response = await apiClient.put(`/creator/communities/${communityId}/`, communityData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+/** GET /creator/exercises/{pk}/ - 获取练习详情 (用于编辑) */
+export const getMyExerciseDetail = async (exerciseId: string): Promise<Exercise> => {
+  const response = await apiClient.get<Exercise>(`/creator/exercises/${exerciseId}/`);
+  return response.data;
+};
+
+/** PUT /creator/exercises/{pk}/ - 更新练习 */
+export const updateMyExercise = async (exerciseId: string, exerciseData: FormData): Promise<Exercise> => {
+  const response = await apiClient.put<Exercise>(`/creator/exercises/${exerciseId}/`, exerciseData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
+};
+
+/** DELETE /creator/exercises/{pk}/ - 删除练习 */
+export const deleteMyExercise = async (exerciseId: string): Promise<void> => {
+  await apiClient.delete(`/creator/exercises/${exerciseId}/`);
+};
+
+// -----------------------------------------------------------------
+// 画廊作品 (Gallery Item) - 仅对创作者可见
+// -----------------------------------------------------------------
+
+/** GET /creator/gallery/ - 获取创作者的所有作品 (作品列表) */
+export const getMyGalleryItems = async (): Promise<GalleryItem[]> => {
+  const response = await apiClient.get<GalleryItem[]>('/creator/gallery/');
+  return response.data;
+};
+
+/** POST /creator/gallery/ - 创建新作品 */
+export const createMyGalleryItem = async (itemData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/gallery/', itemData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+/** GET /creator/gallery/{pk}/ - 获取单个作品详情 (用于编辑页) */
+export const getMyGalleryItemDetail = async (itemId: string): Promise<GalleryItem> => {
+  const response = await apiClient.get<GalleryItem>(`/creator/gallery/${itemId}/`);
+  return response.data;
+};
+
+/** PUT /creator/gallery/{pk}/ - 更新作品 (保存为草稿) */
+export const updateMyGalleryItem = async (itemId: string, itemData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.put(`/creator/gallery/${itemId}/`, itemData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+/** POST /creator/gallery/{pk}/submit/ - 提交作品审核 */
+export const submitMyGalleryItemForReview = async (itemId: string): Promise<{ status: string; message: string }> => {
+  // 假设后端的 URL 与 Course 提交一致
+  const response = await apiClient.post(`/creator/gallery/${itemId}/submit/`);
+  return response.data;
+};
+
+// -----------------------------------------------------------------
+// 社群 (Community) - 仅对创作者可见
+// -----------------------------------------------------------------
+
+/** GET /creator/communities/ - 获取创作者的所有社群 (社群列表) */
+export const getMyCommunities = async (): Promise<Community[]> => {
+  const response = await apiClient.get<Community[]>('/creator/communities/');
+  return response.data;
+};
+
+/** POST /creator/communities/ - 创建新社群 */
+export const createMyCommunity = async (communityData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.post('/creator/communities/', communityData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+/** GET /creator/communities/{pk}/ - 获取单个社群详情 (用于编辑页) */
+export const getMyCommunityDetail = async (communityId: string): Promise<Community> => {
+  const response = await apiClient.get<Community>(`/creator/communities/${communityId}/`);
+  return response.data;
+};
+
+/** PUT /creator/communities/{pk}/ - 更新社群 */
+export const updateMyCommunity = async (communityId: string, communityData: FormData): Promise<OperationResponse> => {
+  const response = await apiClient.put(`/creator/communities/${communityId}/`, communityData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
 };

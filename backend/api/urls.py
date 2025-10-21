@@ -14,7 +14,8 @@ GalleryItemCreateView,
 CommunityCreateView,
 MessageThreadListCreateView,MessageThreadRetrieveDestroyView,
 MyCollectionsView,MySupportedView,MyCreationsView,MyParticipationsView,
-CourseUpdateView,GalleryItemUpdateView,CommunityUpdateView)
+CourseUpdateDetailView,GalleryItemUpdateView,CommunityUpdateView,
+ChapterOrderUpdateView,ChapterDetailView,ChapterOrderUpdateView)
 
 router = DefaultRouter()
 router.register(r'courses', CourseViewSet, basename='course')
@@ -52,10 +53,33 @@ urlpatterns = [
     path('my/creations/', MyCreationsView.as_view(), name='my-creations'),
     path('my/participations/', MyParticipationsView.as_view(), name='my-participations'),
     path('my/profile/', UserProfileView.as_view(), name='my_profile'),
-    path('creator/courses/', CourseCreateView.as_view(), name='course-create'),
-    path('creator/courses/<int:pk>/', CourseUpdateView.as_view(), name='course-update'),
+    
+    
     path('creator/gallery/', GalleryItemCreateView.as_view(), name='gallery-create'),
     path('creator/gallery/<int:pk>/', GalleryItemUpdateView.as_view(), name='gallery-update'),
     path('creator/communities/<int:pk>/', CommunityUpdateView.as_view(), name='community-update'),
     path('creator/communities/', CommunityCreateView.as_view(), name='community-create'),
+    # 课程 (Course)
+    path('creator/courses/', 
+         views.MyCourseListView.as_view(), name='creator-course-list'),
+    path('creator/courses/new/', 
+         views.CourseCreateView.as_view(), name='creator-course-create'),
+    path('creator/courses/<int:pk>/', 
+         views.CourseUpdateDetailView.as_view(), name='creator-course-detail-update'),
+    path('creator/courses/<int:pk>/submit/', 
+         views.CourseSubmitReviewView.as_view(), name='creator-course-submit'),
+    
+    # 章节 (Chapter) - (你已提供的)
+    path('creator/courses/<int:course_pk>/chapters/', 
+         views.ChapterCreateView.as_view(), name='creator-chapter-create'),
+    path('creator/chapters/<int:pk>/', 
+         views.ChapterDetailView.as_view(), name='creator-chapter-detail'),
+    path('creator/courses/<int:course_pk>/chapters/order/', 
+         views.ChapterOrderUpdateView.as_view(), name='creator-chapter-order'),
+
+    # 练习题 (Exercise) - (新添加的)
+    path('creator/chapters/<int:chapter_pk>/exercises/', 
+         views.ExerciseCreateView.as_view(), name='creator-exercise-create'),
+    path('creator/exercises/<int:pk>/', 
+         views.ExerciseDetailView.as_view(), name='creator-exercise-detail'),
     ]

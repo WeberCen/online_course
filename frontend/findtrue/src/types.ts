@@ -149,6 +149,7 @@ export interface Course {
   status: 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived';
   pricePoints: number;
   is_vip_free: boolean; 
+  chapters?: Chapter[];
 }
 
 export interface CourseDetail extends Course {
@@ -178,8 +179,9 @@ export interface GalleryItem {
   requiredPoints: number;
   rating: number;
   version: string;
-  is_vip_free: boolean; // 新增
-  estimated_download_time: number; // 新增
+  is_vip_free: boolean; 
+  estimated_download_time: number; 
+  status: 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived';
 }
 
 export interface GalleryItemDetail extends GalleryItem {
