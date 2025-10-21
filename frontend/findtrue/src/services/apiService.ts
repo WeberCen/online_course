@@ -188,7 +188,7 @@ export const subscribeCourse = async (courseId: string): Promise<OperationRespon
 };
 
 export const unsubscribeCourse = async (courseId: string): Promise<OperationResponse> => {
-  const response = await apiClient.delete(`/courses/${courseId}/subscribe/`);
+  const response = await apiClient.delete(`/courses/${courseId}/unsubscribe/`);
   return response.data;
 };
 
@@ -198,7 +198,7 @@ export const collectCourse = async (courseId: string): Promise<OperationResponse
 };
 
 export const uncollectCourse = async (courseId: string): Promise<OperationResponse> => {
-  const response = await apiClient.delete(`/courses/${courseId}/collect/`);
+  const response = await apiClient.delete(`/courses/${courseId}/uncollect/`);
   return response.data;
 };
 
@@ -213,27 +213,27 @@ export const submitChapterExercises = async (chapterId: string, answers: Exercis
 };
 
 export const getGalleryWorks = async (): Promise<GalleryItem[]> => {
-  const response = await apiClient.get<GalleryItem[]>('/gallery/works/');
+  const response = await apiClient.get<GalleryItem[]>('/gallery/items/');
   return response.data;
 };
 
 export const getGalleryWorkDetail = async (id: string): Promise<GalleryItemDetail> => {
-  const response = await apiClient.get<GalleryItemDetail>(`/gallery/works/${id}/`);
+  const response = await apiClient.get<GalleryItemDetail>(`/gallery/items/${id}/`);
   return response.data;
 };
 
 export const collectGalleryWork = async (workId: string): Promise<OperationResponse> => {
-  const response = await apiClient.post(`/gallery/works/${workId}/collect/`);
+  const response = await apiClient.post(`/gallery/items/${workId}/collect/`);
   return response.data;
 };
 
 export const uncollectGalleryWork = async (workId: string): Promise<OperationResponse> => {
-  const response = await apiClient.delete(`/gallery/works/${workId}/collect/`);
+  const response = await apiClient.delete(`/gallery/items/${workId}/uncollect/`);
   return response.data;
 };
 
 export const downloadGalleryWork = async (workId: string, isConfirmed: boolean): Promise<DownloadLinkPayload> => {
-  const response = await apiClient.post<DownloadLinkPayload>(`/gallery/works/${workId}/download/`, { confirm_cost: isConfirmed });
+  const response = await apiClient.post<DownloadLinkPayload>(`/gallery/items/${workId}/download/`, { confirm_cost: isConfirmed });
   return response.data;
 };
 
@@ -262,13 +262,14 @@ export const createCommunityPost = async (communityId: string, postData: { title
   return response.data;
 };
 
-export const createCommunityReply = async (postId: string, replyData: { content: string }): Promise<CommunityReply> => {
-  const response = await apiClient.post<CommunityReply>(`/posts/${postId}/replies/`, replyData);
+export const createCommunityReply = async (communityId: string,postId: string, replyData: { content: string }
+): Promise<CommunityReply> => {
+  const response = await apiClient.post<CommunityReply>(`/communities/${communityId}/posts/${postId}/replies/`, replyData);
   return response.data;
 };
 
-export const likeCommunityPost = async (postId: string): Promise<OperationResponse> => {
-  const response = await apiClient.post(`/posts/${postId}/like/`);
+export const likeCommunityPost = async (communityId: string,postId: string): Promise<OperationResponse> => {
+  const response = await apiClient.post(`/communities/${communityId}/posts/${postId}/like/`);
   return response.data;
 };
 

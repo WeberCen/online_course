@@ -407,17 +407,23 @@ class GalleryListSerializer(serializers.ModelSerializer):
     author = UserSummarySerializer(read_only=True)
     display_tags = serializers.StringRelatedField(many=True, read_only=True)
     followers_count = serializers.SerializerMethodField()
+    is_collected = serializers.SerializerMethodField()
+    is_downloaded = serializers.SerializerMethodField()
     
     class Meta:
         model = GalleryItem
         fields = [
             'id', 'title', 'description', 'coverImage', 'author', 'created_at',
-            'display_tags', 'requiredPoints', 'rating', 'version', 'followers_count'
+            'display_tags', 'requiredPoints', 'rating', 'version', 'followers_count',
+            'is_collected','is_downloaded'
         ]
+
     def get_followers_count(self, obj):
-        collectors_count = obj.collectors.count()
-        downloaders_count = obj.downloaders.count()
-        return collectors_count + downloaders_count
+        return obj.annotated_collectors_count + obj.annotated_downloaders_count
+    def get_is_collected(self, obj):
+        return getattr(obj, 'annotated_is_collected', False)
+    def get_is_downloaded(self, obj):
+        return getattr(obj, 'annotated_is_downloaded', False)
     def get_display_tags(self, obj):
         all_tags = obj.tags.all()
         if all_tags.count() <= 3:
@@ -431,25 +437,9 @@ class GalleryDetailSerializer(GalleryListSerializer):
     """
     用于画廊作品详情的序列化器，并包含当前用户的下载，收藏状态
     """
-    is_collected = serializers.SerializerMethodField()
-    is_downloaded = serializers.SerializerMethodField() 
-
     class Meta(GalleryListSerializer.Meta):
-        fields = GalleryListSerializer.Meta.fields + ['is_collected', 'is_downloaded', 'workFile']
+        fields = GalleryListSerializer.Meta.fields + ['workFile']
 
-    def get_is_collected(self, obj):
-        user = self.context.get('request').user
-        if user and user.is_authenticated:
-            return GalleryCollection.objects.filter(user=user, gallery_item=obj).exists()
-        return False
-
-    # 新增的方法，用于计算 is_downloaded 的值
-    def get_is_downloaded(self, obj):
-        user = self.context.get('request').user
-        if user and user.is_authenticated:
-            return GalleryDownloadRecord.objects.filter(user=user, gallery_item=obj).exists()
-        return False
-    
 # ===============================================
 # =======         社群模块 Serializers     =======
 # ===============================================

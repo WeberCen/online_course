@@ -6,7 +6,7 @@ from rest_framework import viewsets,generics,mixins, status,serializers
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Count, Q
+from django.db.models import Count, Q,Exists,OuterRef,Subquery,Count
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import get_object_or_404,render
 from django.utils import timezone
@@ -353,7 +353,7 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
         Subscription.objects.create(user=user, course=course)
         return Response({"detail": "Successfully subscribed to the course."}, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['delete'], url_path='subscribe', permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     def unsubscribe(self, request, pk=None):
         course = self.get_object()
         user = request.user
@@ -371,7 +371,7 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "You have already collected this course."}, status=status.HTTP_409_CONFLICT)
         return Response({"detail": "Course collected successfully."}, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['delete'], url_path='collect', permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     def uncollect(self, request, pk=None):
         course = self.get_object()
         user = request.user
@@ -556,12 +556,39 @@ class GalleryItemViewSet(viewsets.ReadOnlyModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return GalleryListSerializer
-        # retrieve, download, collect 等都使用更詳細的 Serializer
         return GalleryDetailSerializer
 
     def get_serializer_context(self):
-        # 確保 request 物件被傳遞給序列化器，以便其內部可以訪問 request.user
         return {'request': self.request}
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action not in ['list', 'retrieve']:
+            return queryset
+        user = self.request.user
+        queryset = queryset.annotate(
+            annotated_collectors_count=Count('collectors', distinct=True),
+            annotated_downloaders_count=Count('downloaders', distinct=True)
+        )
+        if user and user.is_authenticated:
+
+            collected_subquery = GalleryCollection.objects.filter(
+                user=user,
+                gallery_item=OuterRef('pk')
+            )
+            downloaded_subquery = GalleryDownloadRecord.objects.filter(
+                user=user,
+                gallery_item=OuterRef('pk')
+            )
+
+            queryset = queryset.annotate(
+                annotated_is_collected=Exists(collected_subquery),
+                annotated_is_downloaded=Exists(downloaded_subquery)
+            )
+        
+        return queryset
+    
+
 
     @action(detail=True, methods=['post'], permission_classes=[IsStudent])
     def collect(self, request, pk=None):
@@ -573,7 +600,7 @@ class GalleryItemViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "You have already collected this work."}, status=status.HTTP_409_CONFLICT)
         return Response({"detail": "Work collected successfully."}, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=['delete'], url_path='collect', permission_classes=[IsStudent])
+    @action(detail=True, methods=['delete'], permission_classes=[IsStudent])
     def uncollect(self, request, pk=None):
         """取消收藏作品"""
         work = self.get_object()
@@ -643,55 +670,108 @@ class GalleryItemViewSet(viewsets.ReadOnlyModelViewSet):
 # ===============================================
 
 
-class CommunityListView(generics.ListAPIView):
+class CommunityViewSet(viewsets.ModelViewSet):
     """
-    【第一级】获取所有社群板块的列表
+    【第一级】社群板块
     """
     queryset = Community.objects.all().order_by('-created_at')
-    serializer_class = CommunityListSerializer
-    permission_classes = [AllowAny] # 公开接口
 
-class CommunityPostListView(generics.ListAPIView):
-    """
-    【第二級】獲取指定社群下的帖子列表 (僅處理 GET)
-    """
-    queryset = Community.objects.all().order_by('-created_at')
-    permission_classes = [AllowAny]
-    serializer_class = CommunityPostListSerializer
+    def get_serializer_class(self):
+        """根据 action 返回不同的序列化器"""
+        if self.action == 'list':
+            return CommunityListSerializer
+        if self.action == 'create':
+            return CommunityCreateSerializer
+        if self.action == 'retrieve':
+            return CommunityDetailSerializer
+        return CommunityListSerializer # 默认
 
-    def get_queryset(self):
-        """
-        過濾並返回指定社群下的已發佈帖子。
-        """
-        community_pk = self.kwargs.get('community_pk')
-        return CommunityPost.objects.filter(
-            community_id=community_pk, 
-            status='published'
-        ).order_by('-created_at')
-    
-class CommunityPostCreateView(generics.CreateAPIView):
-    """
-    【第二級】在指定社群下創建一個新帖子 (僅處理 POST)
-    """
-    # 權限清晰：直接設為必須登入
-    queryset = Community.objects.all().order_by('-created_at')
-    permission_classes = [IsStudent, IsPaidUsers]
-    serializer_class = CommunityPostCreateSerializer
+    def get_permissions(self):
+        """根据 action 设置不同的权限"""
+        if self.action == 'list':
+            # 继承自 CommunityListView
+            self.permission_classes = [AllowAny]
+        elif self.action == 'create':
+            # 继承自 CommunityCreateView
+            self.permission_classes = [IsAuthenticated, IsArtist]
+        elif self.action == 'retrieve':
+            # 继承自 CommunityDetailView
+            self.permission_classes = [IsAuthenticated, IsArtist]
+        # (其他 action 如 update, destroy 可以后续添加)
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         """
-        執行創建帖子的核心業務邏輯。
+        继承自 CommunityCreateView.perform_create
+        """
+        serializer.save(founder=self.request.user)
+
+# --- 合并 2: CommunityPostViewSet (合并了 5 个 View) ---
+class CommunityPostViewSet(viewsets.ModelViewSet):
+    """
+    【第二级】社群帖子
+    """
+    queryset = CommunityPost.objects.all().order_by('-created_at')
+    
+    # URL kwarg (来自 DetailView)
+    lookup_url_kwarg = 'post_pk' 
+
+    def get_queryset(self):
+        qs = super().get_queryset().filter(
+            community_id=self.kwargs.get('community_pk')
+        )
+        
+        # 继承自 CommunityPostListView / DetailView 的逻辑
+        if self.action in ['list', 'retrieve']:
+             qs = qs.filter(status='published')
+        
+        # 继承自 CommunityPostDestroyView (虽然 IsOwner 权限会做检查，但双重保险)
+        if self.action == 'destroy':
+            qs = qs.filter(author=self.request.user)
+
+        return qs
+
+    def get_serializer_class(self):
+        """根据 action 返回不同的序列化器"""
+        if self.action == 'list':
+            return CommunityPostListSerializer
+        if self.action == 'create':
+            return CommunityPostCreateSerializer
+        if self.action == 'retrieve':
+            return CommunityPostDetailSerializer
+        return CommunityPostListSerializer # 默认
+
+    def get_permissions(self):
+        """根据 action 设置不同的权限"""
+        if self.action == 'list':
+            # 继承自 CommunityPostListView
+            self.permission_classes = [AllowAny]
+        elif self.action == 'retrieve':
+            # 继承自 CommunityPostDetailView
+            self.permission_classes = [IsStudent]
+        elif self.action == 'create':
+            # 继承自 CommunityPostCreateView
+            self.permission_classes = [IsStudent, IsPaidUsers]
+        elif self.action == 'destroy':
+            # 继承自 CommunityPostDestroyView
+            self.permission_classes = [IsOwner]
+        elif self.action == 'like':
+            # 继承自 CommunityPostLikeView
+            self.permission_classes = [IsStudent]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        """
+        继承自 CommunityPostCreateView.perform_create
         """
         user = self.request.user
         
-        # 檢查用戶是否被禁言
         if user.accountStatus == 'suspended':
             raise serializers.ValidationError({"error": "您的账户已被禁言，无法发布帖子。"})
             
         community = get_object_or_404(Community, pk=self.kwargs.get('community_pk'))
         reward_points = serializer.validated_data.get('rewardPoints', 0)
         
-        # 處理懸賞積分
         if reward_points > 0:
             if user.currentPoints < reward_points:
                 raise serializers.ValidationError({"error": "您的积分不足以支付悬赏。"})
@@ -700,37 +780,12 @@ class CommunityPostCreateView(generics.CreateAPIView):
             
         serializer.save(author=user, community=community)
 
-class CommunityPostDetailView(generics.RetrieveAPIView):
-    """
-    【第三级】获取单个帖子的详情（包含所有回复）
-    """
-    serializer_class = CommunityPostDetailSerializer
-    permission_classes = [IsStudent]
-    lookup_url_kwarg = 'post_pk' 
-
-    def get_queryset(self):
-        # 根据 URL 动态筛选，确保帖子属于该社群
-        community_pk = self.kwargs.get('community_pk')
-        return CommunityPost.objects.filter(
-            community_id=community_pk, 
-            status='published'
-        )
-
-class CommunityPostDestroyView(generics.DestroyAPIView):
-    """删除当前用户自己的帖子"""
-    queryset = CommunityPost.objects.all().order_by('-created_at')
-    permission_classes = [IsOwner]
-
-    def get_queryset(self):
-        return super().get_queryset().filter(author=self.request.user)
-
-class CommunityPostLikeView(generics.GenericAPIView):
-    """点赞/取消点赞一个帖子"""
-    queryset = CommunityPost.objects.all().order_by('-created_at')
-    permission_classes = [IsStudent]
-
-    def post(self, request, *args, **kwargs):
-        post = self.get_object()
+    @action(detail=True, methods=['post'])
+    def like(self, request, community_pk=None, post_pk=None):
+        """
+        继承自 CommunityPostLikeView.post
+        """
+        post = self.get_object() 
         user = request.user
         if user in post.likes.all():
             post.likes.remove(user)
@@ -739,39 +794,34 @@ class CommunityPostLikeView(generics.GenericAPIView):
             post.likes.add(user)
             return Response({"status": "liked", "likes_count": post.likes.count()})
 
-class CommunityReplyCreateView(generics.CreateAPIView):
-    """为指定帖子创建新回复"""
+# --- 合并 3: CommunityReplyViewSet (合并了 1 个 View) ---
+class CommunityReplyViewSet(mixins.CreateModelMixin, 
+                          mixins.ListModelMixin, # (推荐) 添加 List
+                          viewsets.GenericViewSet):
+    """
+    【第三级】帖子回复
+    """
     queryset = CommunityReply.objects.all().order_by('-created_at')
     serializer_class = CommunityReplyCreateSerializer
-    permission_classes = [IsStudent]
+    permission_classes = [IsStudent] 
+
+    def get_queryset(self):
+        """根据 URL 中的 post_pk 过滤回复"""
+        return super().get_queryset().filter(
+            post_id=self.kwargs.get('post_pk')
+        )
 
     def perform_create(self, serializer):
+        """
+        继承自 CommunityReplyCreateView.perform_create
+        """
         user = self.request.user
         if user.accountStatus == 'suspended':
             raise serializers.ValidationError({"error": "您的账户已被禁言，无法发布回复。"})
+        
+        # 注意: 我们从 URL 中获取 post_pk
         post = get_object_or_404(CommunityPost, pk=self.kwargs.get('post_pk'))
         serializer.save(author=self.request.user, post=post)
-
-class CommunityCreateView(generics.CreateAPIView):
-    """
-    POST /creator/communities/
-    允许创作者创建新的社群板块
-    """
-    queryset = Community.objects.all().order_by('-created_at')
-    serializer_class = CommunityCreateSerializer
-    permission_classes = [IsAuthenticated, IsArtist] 
-
-    def perform_create(self, serializer):
-        # 自动将创始人设置为当前用户
-        serializer.save(founder=self.request.user)
-class CommunityDetailView(generics.RetrieveAPIView):
-    """
-    GET /communities/{pk}/
-    获取单个社群板块的详情（主要用于编辑页加载数据）
-    """
-    queryset = Community.objects.all()
-    serializer_class = CommunityDetailSerializer
-    permission_classes = [IsAuthenticated, IsArtist] # 允许任何人查看，权限由编辑页的 PUT 接口控制
 
 # ===============================================
 # =======          管理员模块视图          =======

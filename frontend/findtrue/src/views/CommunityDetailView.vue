@@ -110,7 +110,7 @@ const submitReply = async () => {
   if (!postId || !newReplyContent.value.trim()) return;
   isReplying.value = true;
   try {
-    await createCommunityReply(postId, { content: newReplyContent.value });
+    await createCommunityReply(communityId, postId, { content: newReplyContent.value });
     newReplyContent.value = '';
     await fetchPost();
   } catch (err) {
@@ -128,7 +128,7 @@ const submitReply = async () => {
 const handleLikePost = async () => {
   if (!postId) return;
   try {
-    const response: OperationResponse = await likeCommunityPost(postId);
+    const response: OperationResponse = await likeCommunityPost(communityId, postId);
     if (response.status) {
         alert(`操作成功: ${response.status}`);
     }

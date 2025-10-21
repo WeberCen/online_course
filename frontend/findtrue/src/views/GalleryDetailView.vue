@@ -71,90 +71,111 @@ onMounted(async () => {
   }
 });
 
+
 const handleCollect = async () => {
-  if (!work.value) return;
-  try {
-    await collectGalleryWork(String(work.value.id));
-    work.value.is_collected = true;
-  } catch (err) {
-    console.error("收藏失败:", err);
-    if (isAxiosError(err)) {
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        alert("请先登录再收藏。");
-      } else if (err.response?.status === 409) {
-        // 如果后端返回冲突，表示已经收藏，同步前端状态
-        if (work.value) work.value.is_collected = true;
-        alert('您已经收藏了此作品。');
-      } else {
-        alert("操作失败，请稍后再试。");
-      }
-    } else {
-        alert("发生未知错误，请重试。");
-    }
-  }
+  if (!work.value) return;
+  try {
+    await collectGalleryWork(String(work.value.id));
+    work.value.is_collected = true;
+    alert('感謝支持，收藏成功'); 
+  } catch (err) {
+    console.error("收藏失败:", err);
+    if (isAxiosError(err) && err.response) {
+      if (err.response.status === 401 || err.response.status === 403) {
+        alert("请先登录再收藏。");
+      } else if (err.response.status === 409) {
+        // 如果后端返回 409 (已收藏)，也同步状态并提示
+        if (work.value) work.value.is_collected = true;
+        alert('您已经收藏了此作品。');
+      } else {
+        alert("操作失败，请稍后再试。");
+      }
+    } else {
+      alert("发生未知错误，请重试。");
+    }
+  }
 };
+
 
 const handleUncollect = async () => {
   if (!work.value) return;
-  try {
-    await uncollectGalleryWork(String(work.value.id));
-    work.value.is_collected = false;
-  } catch (err) {
-    console.error("取消收藏失败:", err);
-    if (isAxiosError(err)) {
-        if (err.response?.status === 401 || err.response?.status === 403) {
-            alert("请先登录。");
-        } else {
-            alert("操作失败，请稍后再试。");
-        }
-    } else {
-        alert("发生未知错误，请重试。");
-    }
-  }
+  if (window.confirm("您確定要取消收藏嗎？")) {
+
+    try {
+      await uncollectGalleryWork(String(work.value.id));
+      work.value.is_collected = false;
+    } catch (err) {
+      console.error("取消收藏失敗:", err);
+      if (isAxiosError(err) && err.response) {
+        if (err.response.status === 401 || err.response.status === 403) {
+          alert("請先登入。");
+        } 
+          else if (err.response.status === 404) {
+            console.warn("Item was already uncollected (API 404). Syncing UI.");
+            if (work.value) { 
+                work.value.is_collected = false;
+            }
+        } 
+          // 状态 3: 其他真实错误 (如 500 服务器内部错误)
+          else {
+          alert("操作失敗，請重試。");
+        }
+      } else {
+        // 网络错误或其他非 Axios 错误
+        alert("發生未知的錯誤，請重試。");
+      }
+    }
+  }
 };
 
-const handleDownload = async (isConfirmed: boolean = false) => {
+const handleDownload = async (isReConfirmed: boolean = false) => {
   if (!workId) return;
+
+const isConfirmed = isReConfirmed;
 
   try {
     const response = await downloadGalleryWork(workId, isConfirmed);
     alert("获取下载链接成功！");
-    window.location.href = response.downloadUrl;
+    window.open(response.downloadUrl, '_blank');
     if (work.value) work.value.is_downloaded = true;
   } catch (err) {
     console.error("下载失败:", err);
     if (isAxiosError(err) && err.response) {
       const data = err.response.data as Record<string, unknown> | undefined;
+      
+      if (err.response.status === 401 || err.response.status === 403) {
+        alert("请先登录再进行操作。");
+        return; // 增加 return 避免执行后续逻辑
+      }
 
       if (err.response.status === 409 && 
-          typeof data === 'object' && data !== null && 
-          data.confirmationRequired === true && 
-          !isConfirmed) 
-      {
-        const confirmed = window.confirm(`本次下载需要扣除 ${data.pointsToDeduct} 积分，您确定吗？`);
-        if (confirmed) {
-          await handleDownload(true);
-        }
-      } else if (err.response.status === 409 && 
-                 typeof data === 'object' && data !== null &&
-                 data.prerequisiteNotMet === true) 
-      {
-        // 安全地存取嵌套屬性
-        const requiredWork = data.requiredWork as Record<string, unknown> | undefined;
-        const requiredTitle = typeof requiredWork?.title === 'string' ? requiredWork.title : '未知作品';
-        alert(`下载失败：您需要先拥有前置作品《${requiredTitle}》。`);
-      } else if (err.response.status === 401) {
-        alert("请先登录再进行操作。");
-      } else if (err.response.status === 402) {
-        alert("您的积分不足！");
-      } else {
-        const detail = (typeof data === 'object' && data !== null && typeof data.detail === 'string') ? data.detail : '未知错误';
-        alert(`下载失败: ${detail}`);
-      }
-    } else {
-      alert("下载失败，发生网络或未知错误。");
-    }
-  }
+          typeof data === 'object' && data !== null && 
+          data.confirmationRequired === true && 
+          !isConfirmed) // 确保我们不是在“已确认”的重试中
+      {
+        const points = data.pointsToDeduct || (work.value?.requiredPoints || 0); 
+        const confirmed = window.confirm(`本次下载需要扣除 ${points} 积分，您确定吗？`);
+        if (confirmed) {
+          // 用户确认后，再次调用 handleDownload，并设置 isConfirmed = true
+          await handleDownload(true); 
+        }
+      } else if (err.response.status === 409 && 
+                 typeof data === 'object' && data !== null &&
+                 data.prerequisiteNotMet === true) 
+      {
+        const requiredWork = data.requiredWork as Record<string, unknown> | undefined;
+        const requiredTitle = typeof requiredWork?.title === 'string' ? requiredWork.title : '未知作品';
+        alert(`下载失败：您需要先拥有前置作品《${requiredTitle}》。`);
+      } else if (err.response.status === 402) {
+        alert("您的积分不足！");
+      } else {
+        const detail = (typeof data === 'object' && data !== null && typeof data.detail === 'string') ? data.detail : '未知错误';
+        alert(`下载失败: ${detail}`);
+      }
+    } else {
+      alert("下载失败，发生网络或未知错误。");
+    }
+  }
 };
 </script>
 
@@ -170,6 +191,7 @@ const handleDownload = async (isConfirmed: boolean = false) => {
   margin-bottom: 20px;
 }
 .cover-image { 
+  width :50%;
   max-width: 100%; 
   height: auto; 
   border-radius: 8px; 

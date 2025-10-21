@@ -2,7 +2,7 @@
 
 # Django 核心
 django==4.2.5
-djangorestframework==3.14.0
+djangorestframework==3.15.1
 
 # 数据库驱动
 psycopg2-binary==2.9.7
@@ -36,3 +36,6 @@ django-tinymce==4.1.0
 
 # Admin 后台美化主题
 django-jazzmin==2.6.0 
+
+#路由优化
+drf-nested-routers==0.95.0

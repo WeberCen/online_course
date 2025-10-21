@@ -1,5 +1,7 @@
 # backend/api/urls.py
 from django.urls import path,include
+from rest_framework_nested import routers
+from . import views
 from rest_framework.routers import DefaultRouter
 from .views import CourseViewSet,ChapterViewSet
 from .views import (UserRegisterView,UserSearchView,UserLoginView,UserProfileView,
@@ -9,22 +11,21 @@ CertificationSubmitView,EditorImageView,PasswordResetConfirmView,PasswordResetRe
 CourseCreateView,
 GalleryItemViewSet,
 GalleryItemCreateView,
-CommunityCreateView,CommunityListView,CommunityPostDetailView,
-CommunityPostListView,CommunityPostCreateView,CommunityReplyCreateView,
-CommunityPostDestroyView,CommunityPostLikeView,CommunityDetailView,
+CommunityCreateView,
 MessageThreadListCreateView,MessageThreadRetrieveDestroyView,
 MyCollectionsView,MySupportedView,MyCreationsView,MyParticipationsView,
 CourseUpdateView,GalleryItemUpdateView,CommunityUpdateView)
-
-def community_post_view(request, *args, **kwargs):
-    if request.method == 'POST':
-        return CommunityPostCreateView.as_view()(request, *args, **kwargs)
-    return CommunityPostListView.as_view()(request, *args, **kwargs)
 
 router = DefaultRouter()
 router.register(r'courses', CourseViewSet, basename='course')
 router.register(r'chapters', ChapterViewSet, basename='chapter')
 router.register(r'gallery/items', GalleryItemViewSet, basename='gallery-item')
+router.register(r'communities', views.CommunityViewSet, basename='community')
+communities_router = routers.NestedDefaultRouter(router, r'communities', lookup='community')
+communities_router.register(r'posts', views.CommunityPostViewSet, basename='community-post')
+posts_router = routers.NestedDefaultRouter(communities_router, r'posts', lookup='post')
+posts_router.register(r'replies', views.CommunityReplyViewSet, basename='post-reply')
+
 
 urlpatterns = [
     path('auth/register/', UserRegisterView.as_view(), name='auth_register'),
@@ -41,17 +42,8 @@ urlpatterns = [
     path('certification/submit/', CertificationSubmitView.as_view(), name='certification_submit'),
     path('uploads/editor-image/', EditorImageView.as_view(), name='editor-image-upload'),
     path('', include(router.urls)),    
-    path('communities/', CommunityListView.as_view(), name='community-list'),
-    path('communities/<int:pk>/', CommunityDetailView.as_view(), name='community-detail'),
-    path('communities/<int:community_pk>/posts/', community_post_view, name='community-post-list-create'),
-    path('communities/<int:community_pk>/posts/<int:post_pk>/', 
-         CommunityPostDetailView.as_view(), name='community-post-detail'),  
-    path('posts/<int:pk>/', 
-         CommunityPostDestroyView.as_view(), name='community-post-delete'), 
-    path('posts/<int:pk>/like/', 
-         CommunityPostLikeView.as_view(), name='community-post-like'),        
-    path('posts/<int:pk>/replies/', 
-         CommunityReplyCreateView.as_view(), name='post-reply-create'),
+    path('', include(communities_router.urls)),
+    path('', include(posts_router.urls)),
     path('my/messages/', MessageThreadListCreateView.as_view(), name='my-messages-list-create'),
     path('my/messages/<int:pk>/', MessageThreadRetrieveDestroyView.as_view(), name='my-messages-detail-destroy'),
     path('users/search/', UserSearchView.as_view(), name='user-search'),
