@@ -298,6 +298,25 @@ export interface MyCreations {
 export interface MyParticipations {
   posts: CommunityPostListItem[];
 }
+export interface PointsTransaction {
+  id: number;
+  created_at: string; 
+  amount: number;     
+  transaction_type: string; 
+  transaction_type_display: string; 
+  description: string; 
+  balance_after: number | null; 
+  related_link: string | null; 
+}
+
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;     
+  previous: string | null; 
+  results: T[];
+}
+
+
 
 // ===============================================
 // =======         VIP 套餐类型         =======

@@ -7,7 +7,8 @@ from .models import User,CertificationRequest,Course,Chapter,Exercise
 from .models import (Subscription, Collection, Option, fill_in_blank,Tag,
                      GalleryItem, GalleryCollection, GalleryDownloadRecord, 
                      GalleryItemRating,Community,CommunityPost,CommunityReply,
-                     Message,MessageThread,UserExerciseSubmission)
+                     Message,MessageThread,UserExerciseSubmission,
+                     PointsTransaction)
 
 class TagsField(serializers.Field):
     """
@@ -649,6 +650,45 @@ class MyParticipationsSerializer(serializers.Serializer):
     """【/my/participations】 我的参与"""
     # 直接返回帖子列表
     posts = CommunityPostListSerializer(many=True, read_only=True)
+
+class PointsTransactionSerializer(serializers.ModelSerializer):
+    """
+    [新] 序列化“积分流水”记录
+    """
+    transaction_type_display = serializers.CharField(source='get_transaction_type_display', read_only=True)
+    related_link = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PointsTransaction
+        fields = [
+            'id',
+            'created_at',
+            'amount',                  # 变动金额 (e.g., -100)
+            'transaction_type',        # 原始类型 (e.g., 'COURSE_PURCHASE')
+            'transaction_type_display',# 可读类型 (e.g., '课程订阅')
+            'description',             # 描述 (e.g., "订阅课程: 'AI入门'")
+            'balance_after',           # 交易后余额 (可选, 用于调试)
+            'related_link'             # 关联链接 (e.g., "/courses/42")
+        ]
+
+    def get_related_link(self, obj: PointsTransaction) -> str | None:
+        """
+        根据关联的 content_object 动态生成前端路由
+        """
+        if obj.content_object:
+            model_name = obj.content_type.model
+            
+            # 你需要根据你的前端 Vue 路由来调整这些 URL
+            if model_name == 'course':
+                return f"/courses/{obj.object_id}"
+            elif model_name == 'galleryitem':
+                return f"/gallery/{obj.object_id}"
+            elif model_name == 'communitypost':
+                return f"/community/post/{obj.object_id}"
+                
+        return None
+
+
 class CourseCreateSerializer(serializers.ModelSerializer):
     """【创建课程用】的序列化器"""
     tags = TagsField(scope=Tag.TagScope.COURSE, required=False)

@@ -47,6 +47,8 @@ import type {
   MySupported,
   MyCreations,
   MyParticipations,
+  PointsTransaction,
+  PaginatedResponse,
   
   // VIP套餐类型
   VipPlan,
@@ -332,6 +334,11 @@ export const getMyParticipations = async (): Promise<MyParticipations> => {
 
 export const getMyProfile = async (): Promise<User> => {
   const response = await apiClient.get<User>('/my/profile/');
+  return response.data;
+};
+
+export const getMyPointsHistory = async (url: string): Promise<PaginatedResponse<PointsTransaction>> => {
+  const response = await apiClient.get<PaginatedResponse<PointsTransaction>>(url);
   return response.data;
 };
 

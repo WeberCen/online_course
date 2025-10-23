@@ -10,6 +10,8 @@ from django.db.models import Count, Q,Exists,OuterRef,Subquery,Count,Prefetch
 from django.contrib.admin.views.decorators import staff_member_required
 from django.shortcuts import get_object_or_404,render
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+from django.contrib.contenttypes.models import ContentType
 from datetime import timedelta
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -31,13 +33,17 @@ from .serializers import (
     CommunityPostCreateSerializer,CommunityReplyCreateSerializer,
     CommunityDetailSerializer,MessageCreateSerializer,MessageThreadListSerializer,MessageThreadDetailSerializer,
     MyCollectionsSerializer,MySupportedSerializer,MyCreationsSerializer,MyParticipationsSerializer,
-    ChapterSerializer,ExerciseSerializer)
+    ChapterSerializer,ExerciseSerializer,PointsTransactionSerializer)
 from .models import (CertificationRequest,Course,Chapter,
                      Subscription,Collection,Exercise,UserChapterCompletion,
                      GalleryItem,GalleryCollection,GalleryDownloadRecord,
                      Community,CommunityPost,CommunityReply,
-                     User,Tag,Message,MessageThread,UserExerciseCompletion,)
+                     User,Tag,Message,MessageThread,
+                     UserExerciseCompletion,PointsTransaction)
 import logging
+from .services import points as points_service # 导入我们的积分服务模块
+from .services.points import InsufficientPointsError # 导入自定义的"积分不足"异常
+
 
 logger = logging.getLogger(__name__)
 
@@ -348,22 +354,103 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def subscribe(self, request, pk=None):
-        course = self.get_object()
-        user = request.user
-        if Subscription.objects.filter(user=user, course=course).exists():
-            return Response({"detail": "You have already subscribed to this course."}, status=status.HTTP_409_CONFLICT)
-        # ... 您的積分扣除邏輯 ...
-        Subscription.objects.create(user=user, course=course)
-        return Response({"detail": "Successfully subscribed to the course."}, status=status.HTTP_201_CREATED)
+        """
+        [重构 V2] 订阅课程并处理积分支付 (已匹配 Course 模型)。
+        """
+        course = self.get_object()  
+        student = request.user      
+        artist = course.author
+        price = course.pricePoints
+        title = course.title
+        is_course_free_for_vip = course.is_vip_free
+
+        if Subscription.objects.filter(user=student, course=course).exists():
+            return Response(
+                {"detail": _("您已经订阅了此课程。")}, 
+                status=status.HTTP_409_CONFLICT
+            )
+
+        is_price_free = price is None or price <= 0
+        is_own_course = student == artist
+        
+        is_student_vip = student.is_vip 
+        
+        is_free_subscription = (
+            is_price_free or 
+            is_own_course or 
+            (is_course_free_for_vip and is_student_vip)
+        )
+
+        if is_free_subscription:
+            Subscription.objects.create(user=student, course=course)
+            
+            if is_price_free:
+                detail_message = _("成功订阅（免费课程）。")
+            elif is_own_course:
+                detail_message = _("成功订阅（您是创作者）。")
+            else: # (is_course_free_for_vip and is_student_vip)
+                detail_message = _("成功订阅（VIP 免费）。")
+                
+            return Response({"detail": detail_message}, status=status.HTTP_201_CREATED)
+
+        try:
+            tx_expense, tx_income = points_service.transfer_points(
+                from_user=student,
+                to_user=artist,      
+                amount=price,         
+                type_expense=PointsTransaction.TransactionType.COURSE_PURCHASE,
+                type_income=PointsTransaction.TransactionType.COURSE_SALE,
+                description_expense=f"订阅课程: '{title}'", # 匹配: title
+                description_income=f"售出课程: '{title}'", # 匹配: title
+                related_object=course 
+            )
+
+        except InsufficientPointsError as e:
+            return Response(
+                {"detail": _("积分不足，订阅失败。")}, 
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
+        
+        except Exception as e:
+            logging.error(f"课程订阅支付失败: {e}", exc_info=True) 
+            return Response(
+                {"detail": _("支付处理时发生内部错误，订阅失败。")}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        Subscription.objects.create(user=student, course=course)
+
+        return Response(
+            {
+                "detail": _("订阅成功！"),
+                "points_spent": price,
+                "new_balance": tx_expense.balance_after 
+            }, 
+            status=status.HTTP_201_CREATED
+        )
+
 
     @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
     def unsubscribe(self, request, pk=None):
         course = self.get_object()
         user = request.user
-        deleted_count, _ = Subscription.objects.filter(user=user, course=course).delete()
-        if deleted_count == 0:
-            return Response({"detail": "You are not subscribed to this course."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(status=status.HTTP_204_NO_CONTENT)
+
+        subscription = Subscription.objects.filter(user=user, course=course)
+
+        if not subscription.exists():
+            return Response(
+                {"detail": _("您没有订阅此课程。")}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        subscription.delete()
+
+        return Response(
+            {
+                "detail": _("成功取消订阅。"),
+                "note": _("请注意：取消订阅不会退还积分。")
+            }, 
+            status=status.HTTP_200_OK 
+        )
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def collect(self, request, pk=None):
@@ -616,57 +703,102 @@ class GalleryItemViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsStudent])
     def download(self, request, pk=None):
         """
-        【核心重構】處理作品的下載請求
+        [重构后] 下载画廊作品，使用 PointsService 处理积分。
         """
-        work = self.get_object()
+        work = self.get_object() 
         user = request.user
-        # 前端應傳遞 'isConfirmed' 而非 'confirmDeduction' 以保持一致性
         is_confirmed = request.data.get('isConfirmed', False)
 
+        # 1. 检查文件是否存在
         if not work.workFile:
-            return Response({"detail": "Work file is not available for this item."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": _("该作品的文件不可用。")}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
 
+        # 2. 检查前置条件 (你的逻辑很棒，保持不变)
         if work.prerequisiteWork and not GalleryDownloadRecord.objects.filter(user=user, gallery_item=work.prerequisiteWork).exists():
             return Response({
                 "prerequisiteNotMet": True,
                 "requiredWork": {"id": work.prerequisiteWork.id, "title": work.prerequisiteWork.title}
             }, status=status.HTTP_409_CONFLICT)
         
+        # 3. 检查是否为重复下载
         is_redownload = GalleryDownloadRecord.objects.filter(user=user, gallery_item=work).exists()
-        
-        if is_redownload or work.requiredPoints == 0 or (work.is_vip_free and user.is_vip): # 假設用戶模型有 is_vip 屬性
+        if is_redownload:
+            return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
+
+        # 4. 检查是否为“免费”下载 (首次)
+        is_student_vip = user.is_vip
+        is_free_download = (
+            work.requiredPoints is None or work.requiredPoints <= 0 or
+            (work.is_vip_free and is_student_vip) or
+            user == work.author # 允许作者免费下载自己的作品
+        )
+
+        if is_free_download:
+            GalleryDownloadRecord.objects.create(
+                user=user, 
+                gallery_item=work, 
+                points_spent=0, 
+                version_at_download=work.version
+            )
             return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
         
-        if user.currentPoints < work.requiredPoints:
-            return Response({"detail": "Insufficient points."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        # --- 走到这里，说明是付费的、首次下载 ---
 
+        # 5. 获取支付所需信息
+        price = work.requiredPoints
+        artist = work.author
+        title = work.title
+
+        # 6. 检查“二次确认” (你的逻辑很棒，保持不变)
         if not is_confirmed:
             return Response({
                 "confirmationRequired": True,
-                "pointsToDeduct": work.requiredPoints
+                "pointsToDeduct": price
             }, status=status.HTTP_409_CONFLICT)
         
-        # --- 執行扣分和創建下載記錄 ---
-        user.currentPoints -= work.requiredPoints
-        user.save()
-        
-        PointsTransaction.objects.create(
-            user=user, 
-            amount=-work.requiredPoints,
-            description=f"下载作品: {work.title}",
-            transaction_type='download', # 假設您有對應的類型
-            content_object=work
-        )
+        # 7. [核心重构] 执行支付
+        try:
+            tx_expense, tx_income = points_service.transfer_points(
+                from_user=user,
+                to_user=artist,
+                amount=price,
+                type_expense=PointsTransaction.TransactionType.GALLERY_DOWNLOAD,
+                type_income=PointsTransaction.TransactionType.GALLERY_SALE,
+                description_expense=f"下载作品: '{title}'",
+                description_income=f"售出作品: '{title}'",
+                related_object=work
+            )
 
-        # 【關鍵實現】: 在創建下載記錄時，保存當前的版本號
+        except InsufficientPointsError as e:
+            # 捕获“积分不足”异常
+            return Response(
+                {"detail": _("积分不足，下载失败。")}, 
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
+        except Exception as e:
+            logging.error(f"作品下载支付失败: {e}", exc_info=True) 
+            return Response(
+                {"detail": _("支付处理时发生内部错误，下载失败。")}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # 8. 支付成功：创建下载记录
         GalleryDownloadRecord.objects.create(
             user=user, 
             gallery_item=work, 
-            points_spent=work.requiredPoints,
-            version_at_download=work.version # <-- 將版本號存入資料庫
+            points_spent=price, # 记录实际花费的积分
+            version_at_download=work.version
         )
         
-        return Response({"downloadUrl": request.build_absolute_uri(work.workFile.url)})
+        # 9. 返回成功响应
+        return Response({
+            "downloadUrl": request.build_absolute_uri(work.workFile.url),
+            "points_spent": price,
+            "new_balance": tx_expense.balance_after # 告知前端新余额
+        })
     
 # ===============================================
 # =======          社群模块视图          =======
@@ -761,10 +893,11 @@ class CommunityPostViewSet(viewsets.ModelViewSet):
             # 继承自 CommunityPostLikeView
             self.permission_classes = [IsStudent]
         return super().get_permissions()
-
+    
+    @transaction.atomic
     def perform_create(self, serializer):
         """
-        继承自 CommunityPostCreateView.perform_create
+        [重构后] 创建帖子，并原子性地扣除悬赏积分。
         """
         user = self.request.user
         
@@ -774,13 +907,20 @@ class CommunityPostViewSet(viewsets.ModelViewSet):
         community = get_object_or_404(Community, pk=self.kwargs.get('community_pk'))
         reward_points = serializer.validated_data.get('rewardPoints', 0)
         
+        post = serializer.save(author=user, community=community)
         if reward_points > 0:
-            if user.currentPoints < reward_points:
+            try:
+                points_service.adjust_points(
+                    user=user,
+                    amount=-reward_points,
+                    transaction_type=PointsTransaction.TransactionType.COMMUNITY_REWARD,
+                    description=f"发布悬赏帖子: {post.title}",
+                    related_object=post #关联帖子
+                )
+            except InsufficientPointsError:
                 raise serializers.ValidationError({"error": "您的积分不足以支付悬赏。"})
-            user.currentPoints -= reward_points
-            user.save(update_fields=['currentPoints'])
-            
-        serializer.save(author=user, community=community)
+            except Exception as e:
+                raise serializers.ValidationError({"error": _("处理悬赏积分时发生错误。"), "detail": str(e)})
 
     @action(detail=True, methods=['post'])
     def like(self, request, community_pk=None, post_pk=None):
@@ -823,6 +963,89 @@ class CommunityReplyViewSet(mixins.CreateModelMixin,
         # 注意: 我们从 URL 中获取 post_pk
         post = get_object_or_404(CommunityPost, pk=self.kwargs.get('post_pk'))
         serializer.save(author=self.request.user, post=post)
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def mark_as_best_answer(self, request, community_pk=None, post_pk=None, pk=None):
+        """
+        [新增] 将此回复 (pk) 标记为所属帖子 (post_pk) 的最佳答案。
+        
+        - 只有“帖子作者”才能调用此接口。
+        - 如果帖子有悬赏，将原子性地将积分发放给“回复作者”。
+        - URL: .../posts/<post_pk>/replies/<reply_pk>/mark_as_best_answer/
+        """
+        reply = self.get_object() # 获取 reply_pk 对应的回复
+        post = reply.post         # 从回复中获取帖子
+        post_author = post.author
+        reply_author = reply.author
+        
+        # 1. 权限检查：必须是帖子作者
+        if request.user != post_author:
+            return Response(
+                {"detail": _("只有帖子作者才能选择最佳答案。")}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 2. 状态检查：是否已关闭或已选择
+        if post.best_answer is not None:
+            return Response(
+                {"detail": _("该帖子已经选定了最佳答案。")}, 
+                status=status.HTTP_409_CONFLICT
+            )
+
+        if post.status == CommunityPost.StatusChoices.CLOSED:
+             return Response(
+                {"detail": _("该帖子已关闭。")}, 
+                status=status.HTTP_409_CONFLICT
+            )
+            
+        # 3. 检查悬赏金额
+        reward_points = post.rewardPoints
+        
+        try:
+            # 4. [核心] 使用事务
+            with transaction.atomic():
+                
+                # 5. 更新帖子的状态
+                post.best_answer = reply
+                post.status = CommunityPost.StatusChoices.CLOSED # 采纳后自动关闭帖子
+                post.save(update_fields=['best_answer', 'status'])
+                
+                # 6. 如果有悬赏，调用服务发放积分
+                if reward_points > 0:
+                    
+                    # 检查：不能自己给自己发奖
+                    if post_author == reply_author:
+                        # 这是一个业务决策：你可以选择退还积分，
+                        # 或只是标记答案但不发奖。我们选择后者。
+                        pass # 作者采纳自己的回答，不发放积分
+                    else:
+                        # --- 这是核心 ---
+                        # 将积分“发放”给回复的作者
+                        points_service.adjust_points(
+                            user=reply_author,
+                            amount=reward_points, # 正数，表示收入
+                            transaction_type=PointsTransaction.TransactionType.BOUNTY_AWARD,
+                            description=f"赢得悬赏: '{post.title}'",
+                            related_object=post # 关联到这个帖子
+                        )
+
+        except Exception as e:
+            logging.error(f"在发放悬赏时发生内部错误: {e}", exc_info=True)
+            return Response(
+                {"detail": _("在发放悬赏时发生内部错误。"), "error": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # 7. 成功返回
+        return Response(
+            {
+                "detail": _("成功采纳为最佳答案！"),
+                "reward_points_awarded": reward_points if post_author != reply_author else 0,
+                "best_answer_id": reply.id
+            },
+            status=status.HTTP_200_OK
+        )
+
 
 # ===============================================
 # =======          管理员模块视图          =======
@@ -1081,6 +1304,19 @@ class MyParticipationsView(generics.GenericAPIView):
         serializer = self.get_serializer(data)
         return Response(serializer.data)
     
+class PointsHistoryListView(generics.ListAPIView):
+    """
+    [新] 获取当前登录用户的积分流水历史 (分页)
+    
+    API 端点: GET /api/v1/me/points-history/
+    """
+    serializer_class = PointsTransactionSerializer
+    permission_classes = [IsAuthenticated]
+    # pagination_class = StandardResultsSetPagination # (如果你有自定义分页，请取消注释)
+    
+    def get_queryset(self):
+        return PointsTransaction.objects.filter(user=self.request.user)
+
 class UserProfileView(generics.RetrieveUpdateAPIView):
     """
     处理获取和更新当前登录用户信息的视图

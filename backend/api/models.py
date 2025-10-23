@@ -519,21 +519,55 @@ class CommunityReply(models.Model):
 class PointsTransaction(models.Model):
     """积分流水记录模型"""
     class TransactionType(models.TextChoices):
-        COMMUNITY_REWARD = 'community_reward', '悬赏帖子'
-        PURCHASE = 'purchase', '课程订阅'
-        DOWNLOAD = 'download', '作品下载'
-        ACTIVITY_REWARD = 'activity_reward', '活动积分'
-        ADMIN_ADJUST = 'admin_adjust', '管理员调整'
-        INITIAL = 'initial', '初始积分'
-        REFUND = 'refund', '积分退回'
+        # 支出 (学生)
+        COURSE_PURCHASE = 'COURSE_PURCHASE', '课程订阅'
+        GALLERY_DOWNLOAD = 'GALLERY_DOWNLOAD', '作品下载'
+        BOUNTY_POST = 'BOUNTY_POST', '发布悬赏' # 学生发布悬赏时扣费
         
+        # 收入 (艺术家 / 学生 )
+        COURSE_SALE = 'COURSE_SALE', '售出课程'
+        GALLERY_SALE = 'GALLERY_SALE', '售出作品'
+        BOUNTY_AWARD = 'BOUNTY_AWARD', '赢得悬赏' # 回答被采纳时获赏
+        
+        # 其他
+        ACTIVITY_REWARD = 'ACTIVITY_REWARD', '活动积分'
+        ADMIN_ADJUST = 'ADMIN_ADJUST', '管理员调整'
+        INITIAL = 'INITIAL', '初始积分'
+        REFUND = 'REFUND', '积分退回'
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='points_transactions', verbose_name="用户")
-    amount = models.IntegerField(verbose_name="变动数额") 
+    # --- 2. [升级] user 字段的安全性和最佳实践 ---
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,  # 最佳实践：使用 settings.AUTH_USER_MODEL
+        on_delete=models.PROTECT,  # 关键修改：防止用户删除时级联删除流水！
+        related_name='points_transactions', 
+        verbose_name="用户"
+    )
+
+    amount = models.IntegerField(
+        verbose_name="变动数额",
+        help_text="正数为收入, 负数为支出"
+    ) 
+
+    # --- 3. [新增] 审计字段 ---
+    balance_after = models.PositiveIntegerField(
+        verbose_name="交易后余额",
+        help_text="执行此交易后用户的总余额 (currentPoints)",
+        null=True, # 允许为空，以便旧数据迁移
+        blank=True
+    )
+
     description = models.CharField(max_length=255, verbose_name="变动原因")
-    transaction_type = models.CharField(max_length=20, choices=TransactionType.choices, verbose_name="交易类型")
+    
+    transaction_type = models.CharField(
+        max_length=50, # 增加一点长度以适应新的枚举值
+        choices=TransactionType.choices, 
+        verbose_name="交易类型",
+        db_index=True # 为类型筛选增加索引
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="发生时间")
     
+    # 关联内容 
     content_type = models.ForeignKey(
         ContentType, 
         on_delete=models.SET_NULL, 
@@ -548,6 +582,7 @@ class PointsTransaction(models.Model):
     )
     content_object = GenericForeignKey('content_type', 'object_id')
     
+    # 操作者 
     operator = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.SET_NULL, 
@@ -559,12 +594,19 @@ class PointsTransaction(models.Model):
 
     def __str__(self):
         sign = '+' if self.amount > 0 else ''
-        return f"{self.user.username}: {sign}{self.amount} points for {self.get_transaction_type_display()}"
-
+        return f"{self.user.email}: {sign}{self.amount} ({self.get_transaction_type_display()})"
+    
     class Meta:
         verbose_name = "积分流水"
         verbose_name_plural = verbose_name
         ordering = ['-created_at']
+        # --- 5. [新增] 数据库索引 ---
+        indexes = [
+            # 优化 "我的积分流水" 查询 (高频操作)
+            models.Index(fields=['user', '-created_at']), 
+            # 优化 "反向查询" (例如：查询某门课程的所有交易)
+            models.Index(fields=['content_type', 'object_id']),
+        ]
 
 
 # ===============================================

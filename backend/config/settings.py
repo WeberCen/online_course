@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'reversion',
     'tinymce',
     "corsheaders",
+    'django_elasticsearch_dsl',
+    'search',
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -325,3 +327,16 @@ JAZZMIN_SETTINGS = {
         }
     }
 }
+
+# -----------------------------------------------------------------
+# ELASTICSEARCH (搜索) 配置
+# -----------------------------------------------------------------
+# 'env' 函数来自 django-environ，你应该在文件顶部已经定义了
+ELASTICSEARCH_DSL = {
+    'default': {
+        'hosts': env('ELASTICSEARCH_URL', default='http://localhost:9200'),
+    },
+}
+
+ELASTICSEARCH_DSL_SIGNAL_PROCESSOR = 'search.custom_signal_processor.CelerySignalProcessor'
+ELASTICSEARCH_DSL_AUTO_REFRESH = False

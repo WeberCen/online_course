@@ -1,26 +1,27 @@
 // frontend/findtrue/src/router/index.js
 
 import { createRouter, createWebHistory } from 'vue-router'
-import CoursesView from '../views/CoursesView.vue' 
-import CourseDetailView from '../views/CoursesDetailView.vue' 
-import GalleryView from '../views/GalleryView.vue'
-import GalleryDetailView from '../views/GalleryDetailView.vue'  
-import CommunitiesView from '../views/CommunitiesView.vue'
-import CommunityDetailView from '@/views/CommunityDetailView.vue'
-import CommunityPostsView from '@/views/CommunityPostsView.vue'
-import CreatePostView from '../views/CreatePostView.vue' 
+import CoursesView from '../views/CoursesView.vue'; 
+import CourseDetailView from '../views/CoursesDetailView.vue'; 
+import GalleryView from '../views/GalleryView.vue';
+import GalleryDetailView from '../views/GalleryDetailView.vue';
+import CommunitiesView from '../views/CommunitiesView.vue';
+import CommunityDetailView from '@/views/CommunityDetailView.vue';
+import CommunityPostsView from '@/views/CommunityPostsView.vue';
+import CreatePostView from '../views/CreatePostView.vue'; 
 import MessageInboxView from '../views/MessageInboxView.vue';
-import MessageThreadDetailView from '../views/MessageThreadDetailView.vue'
-import CreateMessageThreadView from '../views/CreateMessageThreadView.vue'
+import MessageThreadDetailView from '../views/MessageThreadDetailView.vue';
+import CreateMessageThreadView from '../views/CreateMessageThreadView.vue';
 import PersonalCenterLayout from '../views/PersonalCenterLayout.vue';
 import MyCollectionsView from '../views/MyCollectionsView.vue';
 import MySupportedView from '../views/MySupportedView.vue';
 import MyCreationsView from '../views/MyCreationsView.vue';
 import MyParticipationsView from '../views/MyParticipationsView.vue'; 
 import MyProfileView from '../views/MyProfileView.vue';
-import CreateCourseView from '../views/CreateCourseView.vue'
-import CreateGalleryItemView from '../views/CreateGalleryItemView.vue'
-import CreateCommunityView from '../views/CreateCommunityView.vue'
+import MyPointsView from '../views/MyPointsView.vue';
+import CreateCourseView from '../views/CreateCourseView.vue';
+import CreateGalleryItemView from '../views/CreateGalleryItemView.vue';
+import CreateCommunityView from '../views/CreateCommunityView.vue';
 import LoginView from '@/views/LoginView.vue';
 import RegisterView from '@/views/RegisterView.vue';
 import ForgotPasswordView from '@/views/ForgotPasswordView.vue';
@@ -145,6 +146,11 @@ const router = createRouter({
           path: 'participations',
           name: 'my-participations',
           component: MyParticipationsView
+        },
+        {
+          path: 'points',
+          name: 'my-points',
+          component: MyPointsView
         },
         {
           path: 'profile',

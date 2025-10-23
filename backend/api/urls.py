@@ -53,7 +53,7 @@ urlpatterns = [
     path('my/creations/', MyCreationsView.as_view(), name='my-creations'),
     path('my/participations/', MyParticipationsView.as_view(), name='my-participations'),
     path('my/profile/', UserProfileView.as_view(), name='my_profile'),
-    
+    path('my/points/', views.PointsHistoryListView.as_view(), name='points-history'),
     
     path('creator/gallery/', GalleryItemCreateView.as_view(), name='gallery-create'),
     path('creator/gallery/<int:pk>/', GalleryItemUpdateView.as_view(), name='gallery-update'),
