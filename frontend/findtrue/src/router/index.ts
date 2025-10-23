@@ -81,74 +81,113 @@ const router = createRouter({
     },
     
     {
-      path: '/my',
-      component: PersonalCenterLayout,
-      children: [
-        { path: '', redirect: { name: 'my-collections' } }, // 默认显示我的收藏
-        {
-          path: 'collections',
-          name: 'my-collections',
-          component: MyCollectionsView
+      path: '/my',
+      component: PersonalCenterLayout,
+
+      // --- 修复 1：保护所有“个人中心”子路由 ---
+      meta: { requiresAuth: true }, 
+
+      children: [
+        { path: '', redirect: { name: 'my-collections' } }, 
+        {
+          path: 'collections',
+          name: 'my-collections',
+          component: MyCollectionsView
+        },
+        {
+          path: 'supported',
+          name: 'my-supported',
+          component: MySupportedView
+        },
+        {
+          path: 'creations',
+          name: 'my-creations',
+          component: MyCreationsView,
+          meta: { requiresArtist: true } 
+        },
+        { 
+          path: 'creations/new-course', 
+          name: 'create-course', 
+          component: CreateCourseView, 
+          meta: { requiresArtist: true } 
         },
-        {
-          path: 'supported',
-          name: 'my-supported',
-          component: MySupportedView
+        { 
+          path: 'creations/new-gallery-item', 
+          name: 'create-gallery-item', 
+          component: CreateGalleryItemView, 
+          meta: { requiresArtist: true } 
         },
-        {
-          path: 'creations',
-          name: 'my-creations',
-          component: MyCreationsView
+        { 
+          path: 'creations/new-community', 
+          name: 'create-community', 
+          component: CreateCommunityView, 
+          meta: { requiresArtist: true } 
         },
-        { path: 'creations/new-course', name: 'create-course', component: CreateCourseView },
-        { path: 'creations/new-gallery-item', name: 'create-gallery-item', component: CreateGalleryItemView },
-        { path: 'creations/new-community', name: 'create-community', component: CreateCommunityView },
-        { path: 'creations/courses/:id/edit', name: 'edit-course', component: CreateCourseView },
-        { path: 'creations/gallery/:id/edit', name: 'edit-gallery-item', component: CreateGalleryItemView },
-        { path: 'creations/communities/:id/edit', name: 'edit-community', component: CreateCommunityView },
-        {
-          path: 'participations',
-          name: 'my-participations',
-          component: MyParticipationsView
+        { 
+          path: 'creations/courses/:id/edit', 
+          name: 'edit-course', 
+          component: CreateCourseView, 
+          meta: { requiresArtist: true } 
         },
-        {
-          path: 'profile',
-          name: 'my-profile',
-          component: MyProfileView
+        { 
+          path: 'creations/gallery/:id/edit', 
+          name: 'edit-gallery-item', 
+          component: CreateGalleryItemView, 
+          meta: { requiresArtist: true } 
         },
-        {
-          path: 'message',
-          name: 'message-inbox',
-          component: MessageInboxView
+        { 
+          path: 'creations/communities/:id/edit', 
+          name: 'edit-community', 
+          component: CreateCommunityView, 
+          meta: { requiresArtist: true } 
         },
-        {
-          path: '/messages/:threadId',
-          name: 'message-thread-detail',
-          component: MessageThreadDetailView
-        },
-        {
-          path: '/messages/new',
-          name: 'create-message-thread',
-          component: CreateMessageThreadView
-        },
+        {
+          path: 'participations',
+          name: 'my-participations',
+          component: MyParticipationsView
+        },
+        {
+          path: 'profile',
+          name: 'my-profile',
+          component: MyProfileView
+        },
+        {
+          path: 'message',
+          name: 'message-inbox',
+          component: MessageInboxView
+        },
+        {
+          path: '/messages/:threadId',
+          name: 'message-thread-detail',
+          component: MessageThreadDetailView
+        },
+        {
+          path: '/messages/new',
+          name: 'create-message-thread',
+          component: CreateMessageThreadView
+        },
       ]
     }
   ]
 })
 
-// 添加路由守卫
 router.beforeEach((to, from, next) => {
-  const userStore = useUserStore();
-  
-  // 检查当前路由是否需要身份验证
-  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
-  
-  if (requiresAuth && !userStore.isLoggedIn) {
-    // 需要登录但未登录，重定向到登录页面
-    next({ name: 'login', query: { redirect: to.fullPath } });
-  } else {
-    next();
-  }
+  const userStore = useUserStore();
+  
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiresArtist = to.matched.some(record => record.meta.requiresArtist);
+
+  if ((requiresAuth || requiresArtist) && !userStore.isLoggedIn) {
+    // 1. 目的地需要登录，但未登录 -> 去登录
+    next({ name: 'Login', query: { redirect: to.fullPath } });
+  } else if (requiresArtist && !['artist', 'admin'].includes(userStore.userInfo?.role as string)) { 
+
+    alert("您需要创作者或管理员权限才能访问此页面。");
+    next({ name: 'my-profile' }); // 重定向到个人资料页
+
+  } else {
+    next(); 
+  }
 });
 
 export default router;
